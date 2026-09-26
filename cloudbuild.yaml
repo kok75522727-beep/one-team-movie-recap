@@ -1,0 +1,23 @@
+steps:
+  # 1. Docker image ကို build လုပ်ခြင်း
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/github.com/kok75522727-beep/one-team-movie-recap:$COMMIT_SHA', '.']
+
+  # 2. Image ကို Container Registry သို့ push တင်ခြင်း
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/github.com/kok75522727-beep/one-team-movie-recap:$COMMIT_SHA']
+
+  # 3. Cloud Run ပေါ်သို့ Auto Deploy တင်ပေးခြင်း
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'one-team-movie-recap'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/github.com/kok75522727-beep/one-team-movie-recap:$COMMIT_SHA'
+      - '--region'
+      - 'asia-southeast1'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
