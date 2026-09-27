@@ -21,3 +21,6 @@ steps:
 
 images:
   - 'gcr.io/$PROJECT_ID/github.com/kok75522727-beep/one-team-movie-recap:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
