@@ -10,8 +10,6 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Body
 from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from google.cloud import storage
-from google.oauth2 import service_account
 
 import yt_dlp
 import media_engine
@@ -40,60 +38,27 @@ async def setup_telegram_webhook():
             print("Telegram Webhook Auto-Set Successfully!")
         except: pass
 
-BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "oneteam-recap-storage-2026")
-
+# Static files များ ချိတ်ဆက်ခြင်း
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
-# ပြင်ဆင်ချက်: Google Cloud Run တွင် JSON ဖတ်မရပါက Server မရပ်သွားစေရန် ကာကွယ်ရေးကုဒ် ထည့်ထားပါသည်
-gcp_key_str = os.getenv("GCP_KEY_JSON", "").strip()
-try:
-    if gcp_key_str:
-        creds = service_account.Credentials.from_service_account_info(json.loads(gcp_key_str))
-        storage_client = storage.Client(credentials=creds)
-    else:
-        storage_client = storage.Client()
-except Exception as e:
-    print(f"GCP Key Load Error (Ignored): {e}")
-    storage_client = storage.Client()
+# GCS မသုံးတော့ဘဲ VPS Local Storage (100GB) ကိုသာ အသုံးပြုရန်
+BUCKET_NAME = ""
 
 def get_bucket():
-    return storage_client.bucket(BUCKET_NAME)
+    return None
 
 def upload_to_gcs(local_path: Path | str, blob_name: str, content_type: str = "application/octet-stream") -> str:
-    try:
-        bucket = get_bucket()
-        blob = bucket.blob(blob_name)
-        blob.upload_from_filename(str(local_path), content_type=content_type)
-        try: blob.make_public()
-        except: pass
-        return blob.public_url
-    except:
-        return ""
+    return ""
 
 def download_from_gcs(blob_name: str, local_path: Path | str) -> bool:
-    try:
-        bucket = get_bucket()
-        blob = bucket.blob(blob_name)
-        if not blob.exists(): return False
-        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
-        blob.download_to_filename(str(local_path))
-        return True
-    except: return False
+    return False
 
 def save_json_to_gcs(blob_name: str, data: dict):
-    bucket = get_bucket()
-    blob = bucket.blob(blob_name)
-    blob.upload_from_string(json.dumps(data, ensure_ascii=False), content_type="application/json")
+    pass
 
 def load_json_from_gcs(blob_name: str) -> dict | None:
-    try:
-        bucket = get_bucket()
-        blob = bucket.blob(blob_name)
-        if not blob.exists(): return None
-        content = blob.download_as_text()
-        return json.loads(content) if content else None
-    except: return None
+    return None
 
 class JobSettings(BaseModel):
     project_id: str
