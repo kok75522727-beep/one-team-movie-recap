@@ -1,0 +1,15 @@
+nicegui>=3.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+requests>=2.31.0
+Pillow>=10.0.0
+python-multipart>=0.0.12
+pytest>=8.0
+google-generativeai
+yt-dlp
+azure-cognitiveservices-speech
+google-cloud-storage
+gradio_client
+pydub
+replicate
+requests

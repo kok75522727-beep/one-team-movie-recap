@@ -1,0 +1,14 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.rednote.com	TRUE	/	FALSE	1822276301	abRequestId	ca2a9260-50d2-58cc-8f23-a9153d91d79f
+.rednote.com	TRUE	/	FALSE	1793332303	ets	1790740302883
+.rednote.com	TRUE	/	FALSE	1822310349	xsecappid	ranchi
+.rednote.com	TRUE	/	FALSE	1822276303	a1	1a0f0708e92hwjq4hb5gue47n8oexjzzhblzui8c420000369253
+.rednote.com	TRUE	/	FALSE	1822276303	webId	f08b1df23a89232b9d0638b3dc2692da
+.rednote.com	TRUE	/	FALSE	1825334325	gid	y08i8W80Yixdy08i8W8YdD3YjJxEVA4xD2k71S4d4WIYluJ8dCVuu7888qKjJ2q8qSqY4yqf
+www.rednote.com	FALSE	/	FALSE	1790776106	acw_tc	0a587ca217907743048202782e2302fbaded014934d6fa410806dfc9fb3a3b
+.rednote.com	TRUE	/	FALSE	1791033508	websectiga	82e85efc5500b609ac1166aaf086ff8aa4261153a448ef0be5b17417e4512f28
+.rednote.com	TRUE	/	FALSE	1790774913	sec_poison_id	817c719a-fa16-4e6d-aa0d-ba13ace572a8
+.rednote.com	TRUE	/	FALSE	1822310349	loadts	1790774349485
