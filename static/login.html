@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="my">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>One Team · Account</title>
+  <link rel="stylesheet" href="/static/editor.css" />
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card card">
+      <div class="brand login-brand"><span class="brand-mark">▶</span><div><strong>One Team</strong><small>Movie Recap Studio</small></div></div>
+      <h1>Account ဝင်မယ်</h1>
+      <p>ဝင်ပြီးရင် အခမဲ့ (၂) ပုဒ် စမ်းသပ်ထုတ်လုပ်နိုင်ပါတယ်။ အစမ်းသုံးပြီးပါက Plan ဝယ်ပြီး ဆက်သုံးလို့ရပါတယ်။</p>
+      <button id="googleLogin" class="google-button" type="button">Google နဲ့ ဝင်မယ်</button>
+      <div class="login-divider"><span>Email နဲ့ဝင်မယ်</span></div>
+      <label>Email<input type="email" id="email" autocomplete="email" placeholder="name@example.com" /></label>
+      <label>Password<input type="password" id="password" autocomplete="current-password" minlength="8" placeholder="အနည်းဆုံး 8 လုံး" /></label>
+      <button id="emailLogin" class="primary-button" type="button">ဝင်မယ်</button>
+      <button id="signup" class="text-button signup-link" type="button">Account အသစ်ဖွင့်မယ်</button>
+      <p id="loginMessage" class="login-message"></p>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="/static/login.js?v=20260927" defer></script>
+</body>
+</html>

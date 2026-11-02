@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="my">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>One Team · Movie Recap Studio</title>
+  <link rel="stylesheet" href="/static/editor.css?v=16" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/static/team_logo.png?v=2" alt="One Team Logo" style="width: 36px; height: 36px; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+        <div><strong>One Team</strong><small>Movie Recap Studio</small></div>
+      </div>
+      
+      <div class="topbar-actions">
+        <!-- သက်တမ်း ရက်ပြမည့်နေရာ နှင့် Plan ဝယ်ရန် 👑 ခလုတ် / Key ထည့်ရန် 🔑 ခလုတ် -->
+        <span id="daysRemaining" style="color: #ffd166; font-size: 13px; font-weight: bold; margin-right: 8px;"></span>
+        <button class="compact-button" id="topKeyBtn" type="button" style="font-size: 16px; padding: 2px 8px; background: transparent; border: none; cursor: pointer;" title="API Key ထည့်ရန်">🔑</button>
+        <button class="compact-button" id="topPlanBtn" type="button" style="font-size: 18px; padding: 2px 8px; background: transparent; border: none; cursor: pointer; text-shadow: 0 2px 4px rgba(0,0,0,0.5);" title="Plan ဝယ်ရန်">👑</button>
+        
+        <button class="compact-button" id="menuButton" type="button" style="font-size: 16px; padding: 6px 12px; background: #0b1b34; border: 1px solid #32618f;">☰</button>
+      </div>
+    </header>
+
+    <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
+    <aside class="sidebar hidden" id="sidebarMenu">
+        <div class="sidebar-header">
+            <strong>Menu</strong>
+            <button class="close-button" id="closeSidebar">×</button>
+        </div>
+        <div class="sidebar-content">
+            <button class="sidebar-item" id="sideHistoryBtn">📁 Export History</button>
+            <button class="sidebar-item hidden" id="sideAdminBtn" style="color: #fcd34d;">🛡️ Owner Dashboard</button>
+            <div class="sidebar-divider"></div>
+            <button class="sidebar-item" id="sideKeyBtn">🔑 API Key (ဆက်တင်)</button>
+        </div>
+    </aside>
+
+    
+    <section class="full-history-overlay hidden" id="historySheet">
+      <div class="history-header">
+        <div class="history-header-title">
+            <strong>📁 Output History</strong>
+            <small>Cloud job အခြေအနေနဲ့ အသုံးပြုထားတဲ့ Video များကို ကြည့်နိုင်ပါတယ်</small>
+        </div>
+        <button class="close-button" id="closeHistorySheet" aria-label="Close" style="font-size: 32px;">×</button>
+      </div>
+      <div class="workspace" style="padding-top: 0; max-width: 1200px;">
+          
+          <!-- Dashboard Boxes -->
+          <div class="history-summary-box">
+              <button id="refreshHistoryBtn" class="history-refresh-btn">🔄 ပြန်စစ်မယ်</button>
+              
+              <div class="history-stats-grid">
+                  <div class="stat-card running" data-filter="running">
+                      <strong id="countRunning">0</strong>
+                      <span>စောင့်/လုပ်နေ</span>
+                  </div>
+                  <div class="stat-card success" data-filter="success">
+                      <strong id="countSuccess">0</strong>
+                      <span>စုစုပေါင်းထုတ်ယူပြီး</span>
+                  </div>
+                  <div class="stat-card fail" data-filter="fail">
+                      <strong id="countFail">0</strong>
+                      <span>မအောင်မြင်</span>
+                  </div>
+              </div>
+
+              <div class="history-filters">
+                  <button class="filter-chip active" data-filter="all">All</button>
+                  <button class="filter-chip" data-filter="running">Processing</button>
+                  <button class="filter-chip" data-filter="success">Completed</button>
+                  <button class="filter-chip" data-filter="fail">Failed</button>
+              </div>
+          </div>
+
+          <div id="historyList" class="history-grid">
+             <p style="text-align: center; color: #94a3b8; font-size: 14px; margin-top: 40px; grid-column: 1/-1;">မှတ်တမ်း ရှာနေပါသည်...</p>
+          </div>
+      </div>
+    </section>
+
+    <section class="plan-sheet hidden" id="keySheet" aria-label="API Key">
+      <div class="plan-sheet-title">
+        <div><strong>API Key</strong><small id="keySheetHint">Script နဲ့ အသံအတွက် API Key ထည့်ပါ။ စက်ထဲတွင်သာ မှတ်သားထားပါမည်။</small></div>
+        <button class="close-button" id="closeKeySheet" aria-label="Close">×</button>
+      </div>
+      <label style="margin-bottom: 6px;">
+        Gemini API Key ထည့်ရန်
+        <input type="text" id="apiKey" autocomplete="off" placeholder="AIza..." />
+      </label>
+      <label style="margin-bottom: 6px;">
+        Groq API Key ထည့်ရန် (Movie Subtitle သီးသန့်)
+        <input type="text" id="groqApiKey" autocomplete="off" placeholder="gsk_..." />
+      </label>
+      
+      <!-- သိမ်းထားသော Key များ ပြသမည့်နေရာ -->
+      <div id="savedKeysContainer" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;"></div>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; margin: 0 0 12px;">
+        <a class="help-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="margin: 0;">API Key ရယူရန်</a>
+        <button id="checkKeyBtn" type="button" style="background: transparent; border: none; color: #8bc6ff; font-size: 11px; cursor: pointer; padding: 0;">🔄 Key စစ်ဆေးမည်</button>
+      </div>
+      <p id="keyStatusMsg" style="font-size: 11px; margin: 0 0 10px 0; display: none;"></p>
+      <button class="primary-button" id="saveKey" type="button">အသုံးပြုမယ်</button>
+    </section>
+
+    <section class="plan-sheet hidden" id="planSheet" aria-label="Plans and payment">
+      <div class="plan-sheet-title">
+        <div><strong>👑 Pro Features & Plans</strong><small>အားသာချက်များကို လေ့လာပြီး Plan ဝယ်ယူနိုင်ပါသည်</small></div>
+        <button class="close-button" id="closePlanSheet" aria-label="Close">×</button>
+      </div>
+      <p class="account-summary" id="accountStatus">Account စစ်နေပါတယ်…</p>
+      
+      <div class="features-list" style="margin-bottom: 15px; padding: 12px; background: #0b1a30; border-radius: 10px; border: 1px solid #1e3a5f;">
+        <div style="font-size: 11px; margin-bottom: 8px; color: #e2e8f0;">⚡ <b>One-Click Cloud:</b> ဖုန်းမလေးဘဲ ဆာဗာတွင် တိုက်ရိုက်ထုတ်ပေးသည်</div>
+        <div style="font-size: 11px; margin-bottom: 8px; color: #e2e8f0;">📴 <b>Background Export:</b> Screen ပိတ်ထားလည်း ဆက်လုပ်ပေးသည်</div>
+        <div style="font-size: 11px; margin-bottom: 8px; color: #e2e8f0;">🤖 <b>AI Voice & Script:</b> မြန်မာအသံနှင့် ဇာတ်ညွှန်း အလိုအလျောက်</div>
+        <div style="font-size: 11px; color: #e2e8f0;">🛡️ <b>Copyright Shield:</b> မူပိုင်ခွင့်လွတ်စေရန် အဆင့်မြင့် ဖစ်တာများ</div>
+      </div>
+
+      <div class="offer-list" id="planList"></div>
+      <div class="payment-form hidden" id="paymentForm">
+        <div class="payment-selected" id="paymentSelected"></div>
+        <label>Payment Method
+          <select id="paymentMethod">
+            <option value="KBZPay">KBZPay</option>
+            <option value="WavePay">WavePay</option>
+          </select>
+        </label>
+        <p class="destination" id="paymentDestination"></p>
+        <label>Transaction ID<input id="transactionId" maxlength="100" autocomplete="off" placeholder="ဥပမာ: 123456789" /></label>
+        <label>Receipt ပုံ (မဖြစ်မနေမဟုတ်)<input id="receiptInput" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+        <button class="primary-button" id="submitPayment" type="button" style="width:100%;">ငွေလွှဲအချက်အလက်ပို့မယ်</button>
+        <p class="payment-note" id="paymentNote"></p>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="workspace-title">
+        <div>
+          <span class="eyebrow">ONE TEAM STUDIO</span>
+          <h1>Movie Recap Editor</h1>
+          <p>Video ပေါ်မှာပဲ Blur၊ Subtitle နဲ့ Logo ကိုချက်ချင်းနေရာချပါ။</p>
+          
+          <!-- Telegram Group နှင့် Telegram Bot သို့ ချိတ်ဆက်ရန် ခလုတ်များ -->
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+            <a href="https://t.me/oneteam24" target="_blank" style="display: inline-block; padding: 8px 14px; background: #1e293b; color: #60a5fa; font-size: 13px; font-weight: bold; text-decoration: none; border-radius: 6px; border: 1px solid #334155;">▶ Telegram group သို့ Join ရန်</a>
+            <a id="tgConnectBtn" href="#" target="_blank" style="display: none; padding: 8px 14px; background: linear-gradient(135deg, #2b88ff, #773cf7); color: white; font-size: 13px; font-weight: bold; text-decoration: none; border-radius: 6px; box-shadow: 0 4px 12px rgba(43, 136, 255, 0.3);">✈️ Bot ဖြင့် ချိတ်ဆက်ရန်</a>
+          </div>
+
+        </div>
+        <div class="session-badge" id="sessionStatus">Account စစ်နေပါတယ်</div>
+      </div>
+
+      <div class="studio-grid">
+        <section class="video-panel card">
+          <div class="panel-heading">
+            <div><span class="panel-kicker">VIDEO SOURCE</span><strong id="videoName">Video ဖိုင်တင်ပါ (သို့) Link ထည့်ပါ</strong></div>
+          </div>
+          
+          <div class="upload-empty" id="emptyState" style="padding: 25px 15px; border: none; background: transparent; display: flex; flex-direction: column; align-items: center; width: 100%; box-sizing: border-box;">
+            
+            <div id="linkInputContainer" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 350px; margin: 0 auto;">
+              <input type="text" id="linkInput" placeholder="YouTube, TikTok Link..." style="width: 100%; padding: 14px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 14px; margin: 0; outline: none; box-sizing: border-box; text-align: center;">
+              <button type="button" id="fetchLinkBtn" class="primary-button" style="width: 100%; padding: 14px; font-size: 15px; font-weight: bold; border-radius: 8px; margin: 0; box-sizing: border-box; background: #3b82f6; color: white; border: none; cursor: pointer;">ဆွဲယူမည်</button>
+            </div>
+            
+            <div id="linkLoadingContainer" class="hidden" style="width: 100%; max-width: 350px; margin: 0 auto; text-align: center;">
+                <div style="font-size: 14px; color: #94a3b8; margin-bottom: 12px;" id="linkProgressText">Video ကို ဆွဲယူနေပါသည်... 0%</div>
+                <div class="progress-track" style="margin-top: 0; background: #1e293b;"><i id="linkProgressBar" style="width: 0%;"></i></div>
+            </div>
+
+            <span id="uploadHint" style="color: #64748b; font-size: 13px; font-weight: bold; text-align: center; margin: 15px 0 10px;">(သို့မဟုတ်)</span>
+            
+            <label id="uploadLabel" class="upload-button" style="margin: 0; width: 100%; max-width: 350px; padding: 14px; font-size: 14px; background: #1e293b; border: 1px dashed #475569; border-radius: 8px; cursor: pointer; color: #e2e8f0; display: flex; align-items: center; justify-content: center; transition: 0.2s; box-sizing: border-box;">
+              <input type="file" id="videoInput" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-msvideo" style="display: none;" />
+              📁 စက်ထဲမှ Video ဖိုင်ရွေးမည်
+            </label>
+          </div>
+
+          <div class="video-stage hidden" id="videoStage">
+            <video id="sourceVideo" controls playsinline preload="metadata"></video>
+            <div class="overlay-layer" id="overlayLayer"></div>
+          </div>
+          <div class="video-meta" id="videoMeta">ဖိုင်တင်ပြီးရင် video ပေါ်မှာတိုက်ရိုက်ပြင်နိုင်မယ်</div>
+        </section>
+
+        <section class="control-panel card">
+          <div class="panel-heading">
+            <div><span class="panel-kicker">QUICK CONTROLS</span><strong>စာတန်းနဲ့ Blur</strong></div>
+            <span class="live-dot">LIVE</span>
+          </div>
+          <div class="tab-list" role="tablist">
+            <button class="tab active" data-tab="blur">Blur</button>
+            <button class="tab" data-tab="subtitle">Subtitle</button>
+            <button class="tab" data-tab="format">Format</button>
+            <button class="tab" data-tab="edit">Edit</button>
+            <button class="tab" data-tab="logo">Logo</button>
+            <button class="tab" data-tab="voice">အသံ</button>
+          </div>
+
+          <div class="tab-page active" data-page="blur">
+            <label class="switch-row"><span>Blur ပြမယ်</span><input type="checkbox" id="blurEnabled" /><i></i></label>
+            <div class="two-col">
+              <label>Blur နေရာ
+                <select id="blurLayer">
+                  <option value="S">S (အောက်ဘက် စာတန်း)</option>
+                  <option value="T">T (အပေါ်ဘက် Logo)</option>
+                </select>
+              </label>
+              <label>Blur အား <output id="blurStrengthValue">18</output><input id="blurStrength" type="range" min="4" max="30" value="18" /></label>
+            </div>
+            <button class="secondary-button" id="addBlur" type="button" style="margin-top: 10px; width: 100%;">+ Blur Box ထည့်မယ်</button>
+          </div>
+
+          <div class="tab-page" data-page="subtitle">
+            <label class="switch-row"><span>Subtitle ပြမယ်</span><input type="checkbox" id="subtitleEnabled" checked /><i></i></label>
+            <input type="hidden" id="subtitleText" value="စာတန်းနေရာ (Center)" /> 
+            <div class="two-col">
+              <label>Font
+                <select id="subtitleFont">
+                  <option>Noto Sans Myanmar</option>
+                  <option>Pyidaungsu</option>
+                  <option>Pyidaungsu Bold</option>
+                  <option>A13_WenYoe Regular</option>
+                  <option>Z10-Cartoon</option>
+                </select>
+              </label>
+              <label>Size <output id="subtitleSizeValue">20</output><input id="subtitleSize" type="range" min="14" max="50" value="20" /></label>
+            </div>
+            <div class="two-col">
+              <label>စာတန်းအရောင်<input id="subtitleColor" type="color" value="#ffd166" /></label>
+              <label>Outline<input id="subtitleOutline" type="color" value="#000000" /></label>
+            </div>
+            <div class="two-col">
+              <label>Background<select id="subtitleBackground"><option value="solid">Solid background</option><option value="transparent">Transparent</option></select></label>
+              <label>Opacity <output id="subtitleOpacityValue">70</output><input id="subtitleOpacity" type="range" min="0" max="100" value="70" /></label>
+            </div>
+            <div class="two-col">
+              <label>X (ဘယ်-ညာ) <output id="subtitleXValue">50</output><input id="subtitleX" type="range" min="4" max="96" value="50" /></label>
+              <label>Y (အထက်-အောက်) <output id="subtitleYValue">82</output><input id="subtitleY" type="range" min="4" max="96" value="82" /></label>
+            </div>
+          </div>
+          
+          <div class="tab-page" data-page="format">
+            <div class="two-col">
+              <label>Aspect<select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select></label>
+              <label>Type
+  <select id="recapType">
+    <option value="Movie Recap">Movie Recap</option>
+    <option value="Raw to Recap">Raw to Recap</option>
+    <option value="Movie Subtitle">Movie Subtitle</option>
+    <option value="Movie Dub">Movie Dub</option>
+    <option value="Silent Recap">Silent Recap</option>
+  </select>
+</label>
+            </div>
+          </div>
+          
+          <div class="tab-page" data-page="edit">
+            <label class="switch-row"><span>Mirror</span><input type="checkbox" id="mirror" /><i></i></label>
+            <label class="switch-row"><span>Zoom</span><input type="checkbox" id="zoomEnabled" /><i></i></label>
+            <label>Video Filter (အရောင်)
+              <select id="videoFilter">
+                <option value="None">None (မူရင်း)</option>
+                <option value="HD Cam 2">HD Cam 2 (အကြည်၊ အရောင်အေး)</option>
+                <option value="Glow">Glow (အရောင်တောက်)</option>
+              </select>
+            </label>
+            <label class="switch-row"><span style="color: #60a5fa;">Video အနောက်ခံဝါးမည်</span><input type="checkbox" id="videoBgBlur" /><i></i></label>
+            <label class="switch-row"><span style="color: #fa6371;">ကာဘာပုံဖြတ်မည် (0.02s)</span><input type="checkbox" id="trimCover" /><i></i></label>
+            
+            <label>Background Music<input type="file" id="musicInput" accept="audio/*" /></label>
+            <label>Music Volume <output id="musicVolumeValue">24</output><input id="musicVolume" type="range" min="0" max="100" value="24" /></label>
+          </div>
+          
+          <div class="tab-page" data-page="logo">
+            <label>Logo ပြသမည့်ပုံစံ
+              <select id="logoType">
+                <option value="static">ပုံသေ (Static Image / Text)</option>
+                <option value="moving">စာသားပြေးမည် (Moving Test Logo)</option>
+                <option value="none">Logo မပြပါ (None)</option>
+              </select>
+            </label>
+            <label>Logo Font
+              <select id="logoFont">
+                <option value="Beloved Bunny">Beloved Bunny</option>
+                <option value="Devroye Unicode">Devroye Unicode</option>
+                <option value="Great Vibes">Great Vibes</option>
+                <option value="Wreck Pixel">Wreck Pixel</option>
+                <option value="Sail">Sail</option>
+                <option value="Sweetie">Sweetie</option>
+              </select>
+            </label>
+            <label>Logo Image<input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp" /></label>
+            <label>Logo စာသား<input id="logoText" maxlength="80" placeholder="Khant Happy · ကိုခန့်" /></label>
+            <label>Logo Size <output id="logoSizeValue">22</output><input id="logoSize" type="range" min="10" max="45" value="22" /></label>
+            <div class="two-col">
+              <label>X (ဘယ်-ညာ) <output id="logoXValue">84</output><input id="logoX" type="range" min="4" max="96" value="84" /></label>
+              <label>Y (အထက်-အောက်) <output id="logoYValue">86</output><input id="logoY" type="range" min="4" max="96" value="86" /></label>
+            </div>
+          </div>
+          
+          <div class="tab-page" data-page="voice">
+            <input type="hidden" id="voice" value="Thiha" />
+            <label>အသံရွေးချယ်ရန်</label>
+            <div class="voice-grid-container" id="voiceGrid"></div>
+            
+            <!-- Voice Clone ရွေးထားမှသာ ပေါ်လာမည့် ကိုယ်ပိုင်အသံတင်ရန်အကွက် -->
+            <label id="rvcModelContainer" class="hidden" style="margin-top: 15px; border-color: #ffd166;">
+                <span style="color: #ffd166;">အသံပွားလိုသော ကိုယ်ပိုင်အသံဖိုင် (MP3/WAV) တင်ပါ</span>
+                <input type="file" id="rvcTargetAudio" accept="audio/*" />
+            </label>
+
+            <label style="margin-top: 10px;">Voice Speed (အသံ အနှေး/အမြန်)
+              <select id="voiceSpeed">
+                <option value="1.0">1.0x (Normal)</option>
+                <option value="1.1">1.1x (နည်းနည်းမြန်)</option>
+                <option value="1.2">1.2x (မြန်)</option>
+                <option value="1.3">1.3x (ပိုမြန်)</option>
+                <option value="1.5">1.5x (1.5 ဆမြန်)</option>
+                <option value="2.0">2.0x (2 ဆမြန်)</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <section class="export-card card" id="exportCard">
+        <div><span class="panel-kicker">FINAL EXPORT</span><strong id="exportTitle">အကုန်ရွေးပြီး Video Export လုပ်ပါ</strong></div>
+        <button class="export-button" id="exportButton" type="button" disabled style="width: 100%;">Export Video</button>
+      </section>
+      
+      <section class="job-card hidden" id="jobCard">
+        <div class="job-heading">
+          <div><span class="panel-kicker">PROCESSING</span><strong id="jobTitle">Final Video လုပ်နေပါတယ်</strong></div>
+          <button class="cancel-button" id="cancelJob" type="button">Cancel</button>
+        </div>
+        <div class="progress-track"><i id="jobProgress"></i></div>
+        <span id="jobPercent">0%</span>
+        <ol id="jobSteps">
+          <li data-step="upload">Video စစ်နေပါတယ်</li>
+          <li data-step="script">Script ရေးနေပါတယ်</li>
+          <li data-step="voice">အသံထုတ်နေပါတယ်</li>
+          <li data-step="render">Final MP4 ပေါင်းနေပါတယ်</li>
+        </ol>
+        
+        <div id="downloadContainer" class="hidden" style="display: flex; gap: 10px; margin-top: 16px;">
+          <a class="download-button" id="downloadButton" style="flex: 1; text-align: center; margin-top: 0;">Final MP4 ဒေါင်းလုပ်</a>
+          <a class="download-button" id="downloadThumbBtn" style="flex: 1; text-align: center; margin-top: 0; background: #eab308; color: #06111e;">ကာဗာပုံ ဒေါင်းလုပ်</a>
+        </div>
+        
+        <p class="job-error hidden" id="jobError"></p>
+      </section>
+    </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="/static/editor.js?v=21" defer></script>
+</body>
+</html>

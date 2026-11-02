@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One Team - Pro Admin Dashboard</title>
+  <style>
+    .switch-row { display:flex; align-items:center; justify-content:space-between; border:1px solid rgba(78,117,158,.42); background:#0a1d39; border-radius:8px; padding:10px; cursor: pointer; }
+    .switch-row input { display:none; }
+    .switch-row i { width:33px; height:18px; border-radius:20px; background:#475b76; position:relative; transition:.18s; }
+    .switch-row i::after { content:''; position:absolute; width:14px; height:14px; left:2px; top:2px; border-radius:50%; background:#fff; transition:.18s; }
+    .switch-row input:checked+i { background:#16a34a; }
+    .switch-row input:checked+i::after { transform:translateX(15px); }
+    body { background-color: #0b1322; color: #f8fafc; margin: 0; padding: 0; font-family: sans-serif; }
+    .owner-container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+    .card { background: #131c2e; border: 1px solid #233554; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .grid-5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-box { background: #0b1322; border: 1px solid #1e293b; padding: 15px; border-radius: 8px; text-align: center; }
+    .stat-box h3 { margin: 0 0 10px 0; font-size: 13px; color: #94a3b8; }
+    .stat-box p { margin: 0; font-size: 22px; font-weight: bold; color: #38bdf8; }
+    .btn { background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-success { background: #16a34a; }
+    .btn-danger { background: #dc2626; }
+    .btn-purple { background: #9333ea; }
+    input { width: 100%; background: #0b1322; border: 1px solid #334155; color: #fff; padding: 10px; border-radius: 6px; margin-top: 5px; margin-bottom: 12px; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 10px; border-bottom: 1px solid #1e293b; text-align: left; font-size: 14px; }
+    th { color: #94a3b8; }
+
+    /* --- Live Dashboard Styles --- */
+    .job-card-live { background: #0b1727; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .job-header-live { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .job-title-live { font-size: 17px; font-weight: bold; color: #fff; word-break: break-all; }
+    .job-email-live { font-size: 13px; color: #64748b; margin-bottom: 15px; display: block; }
+    .job-grid-live { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .job-info-col span { display: block; font-size: 12px; color: #475569; margin-bottom: 5px; }
+    .job-info-col strong { display: block; font-size: 13px; color: #cbd5e1; }
+    .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; white-space: nowrap; margin-left: 10px; }
+    .status-badge.processing { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+    .status-badge.completed { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .status-badge.failed { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  </style>
+</head>
+<body>
+  <div class="owner-container">
+    <div class="header-bar">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="logo-icon" style="background:#2563eb; width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:bold;">▶</div>
+        <h2 style="margin:0;">One Team - Owner Dashboard</h2>
+      </div>
+      <button class="btn" onclick="window.location.assign('/')">Editor သို့</button>
+    </div>
+
+    <div class="grid-5">
+      <div class="stat-box"><h3>Active VIP</h3><p id="vipCount">-</p></div>
+      <div class="stat-box"><h3>Trial အဖွဲ့ဝင်</h3><p id="trialCount">-</p></div>
+      <div class="stat-box"><h3>စစ်ရန် ငွေလွှဲ</h3><p id="pendingCount" style="color: #f59e0b;">-</p></div>
+      <div class="stat-box"><h3>စုစုပေါင်း ✅ Success</h3><p id="successCount" style="color: #4ade80;">-</p></div>
+      <div class="stat-box"><h3>စုစုပေါင်း ❌ Fail</h3><p id="failCount" style="color: #f87171;">-</p></div>
+    </div>
+
+    <!-- ⚡ Live Export Dashboard (ယာယီ - ၄ နာရီ) -->
+    <div class="card" style="background: transparent; border: none; padding: 0;">
+      <h3 style="margin-top:0; color: #fff; margin-bottom: 15px; font-size: 18px;">⚡ Live Export History (ယခုလုပ်ဆောင်နေဆဲ)</h3>
+      <div id="liveJobsContainer">
+         <p style="color: #94a3b8;">Loading jobs...</p>
+      </div>
+    </div>
+
+    <!-- 📁 Full Database History (တစ်သက်လုံးစာ မှတ်တမ်း) -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <h3 style="margin:0; color: #fff; font-size: 17px;">📁 Database မှတ်တမ်းအပြည့်အစုံ</h3>
+        <button class="btn btn-purple" id="btnLoadHistory" onclick="loadFullHistory()">မှတ်တမ်းဟောင်းများ ဆွဲထုတ်ရန်</button>
+      </div>
+      
+      <div id="fullHistoryContainer" style="display: none; margin-top: 15px; overflow-x: auto;">
+        <p id="historyLoadingTxt" style="color: #94a3b8; text-align: center;">ဒေတာများ ရှာဖွေနေပါသည်...</p>
+        <table id="fullHistoryTable" style="display: none;">
+          <thead>
+            <tr><th>ရက်စွဲ / အချိန်</th><th>Email</th><th>ဗီဒီယိုအမည်</th><th>ကြာချိန်</th><th>အခြေအနေ</th></tr>
+          </thead>
+          <tbody id="fullHistoryBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 🌟 လက်ရှိ VIP စာရင်း (Email အမှန်များပြရန်) -->
+    <div class="card">
+      <h3 style="margin-top:0; color: #fff; font-size: 17px;">🌟 လက်ရှိ VIP အသုံးပြုသူများ (VIP List)</h3>
+      <div id="vipListContainer" style="overflow-x:auto;">
+        <p style="color: #94a3b8;">Loading...</p>
+      </div>
+    </div>
+
+    <!-- Free User Settings -->
+    <div class="card" style="border-color: #3b82f6;">
+      <h3 style="margin-top:0; color: #60a5fa;">⚙️ Free User ကန့်သတ်ချက်များ (Settings)</h3>
+      <label class="switch-row" style="margin-bottom: 12px; max-width: 300px;">
+        <span style="font-size: 14px; font-weight: bold;">Free User များကို ကန့်သတ်မည်</span>
+        <input type="checkbox" id="freeLimitEnabled" /><i></i>
+      </label>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label style="font-size: 13px;">တစ်နေ့ အခမဲ့ထုတ်ခွင့် (ပုဒ်)</label><input type="number" id="freeDailyLimit" value="1" min="0"></div>
+          <div><label style="font-size: 13px;">အများဆုံး ကြာချိန် (စက္ကန့်)</label><input type="number" id="freeMaxSecs" value="300" min="60"></div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div>
+              <label style="font-size: 13px;">ခွင့်ပြုမည့် အမျိုးအစား</label>
+              <select id="freeAllowedType" style="width: 100%; background: #0b1322; border: 1px solid #334155; color: #fff; padding: 10px; border-radius: 6px; margin-top: 5px;">
+                  <option value="Movie Recap">Movie Recap</option>
+                  <option value="Silent Recap">Silent Recap</option>
+                  <option value="Raw to Recap">Raw to Recap</option>
+                  <option value="Movie Dub">Movie Dub</option>
+              </select>
+          </div>
+          <div>
+              <label style="font-size: 13px; display: block; margin-bottom: 5px;">Voice Clone အသုံးပြုခွင့်</label>
+              <label class="switch-row"><span style="font-size: 13px;">ခွင့်ပြုမည်</span><input type="checkbox" id="freeAllowVoiceClone" /><i></i></label>
+          </div>
+      </div>
+      <button class="btn" id="btnSaveSettings" style="width: 100%; margin-top: 15px; background: #3b82f6;">Setting သိမ်းမည်</button>
+      <div id="settingsMsg" style="margin-top: 10px; font-size: 13px; text-align: center;"></div>
+    </div>
+    <!-- Payment & Extend User Section -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div class="card" style="border-color: #9333ea;">
+          <h3 style="margin-top:0; color: #c084fc;">VIP ရက်တိုးပေးမည်</h3>
+          <label style="font-size: 13px;">User Email</label>
+          <input type="email" id="extendEmail" placeholder="user@gmail.com">
+          <label style="font-size: 13px;">တိုးမည့် ရက် (1+)</label>
+          <input type="number" id="extendDays" value="1" min="1">
+          <button class="btn btn-purple" id="btnExtendUser" style="width: 100%;">ရက်တိုးပေးမည်</button>
+          <div id="extendMsg" style="margin-top: 10px; font-size: 13px; text-align: center;"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-top:0;">စစ်ရန်ငွေလွှဲများ (Payment Approval)</h3>
+          <div id="paymentTableContainer" style="overflow-x:auto;"><p id="paymentStatusMsg" style="color: #94a3b8;">Loading...</p></div>
+        </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    let accessToken = '';
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/owner/settings', { headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('freeLimitEnabled').checked = data.free_limit_enabled;
+            document.getElementById('freeDailyLimit').value = data.free_daily_limit;
+            document.getElementById('freeMaxSecs').value = data.free_max_seconds;
+            document.getElementById('freeAllowedType').value = data.free_allowed_type;
+            document.getElementById('freeAllowVoiceClone').checked = data.free_allow_voice_clone;
+        }
+      } catch (e) {}
+    }
+
+    document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+      const msg = document.getElementById('settingsMsg');
+      msg.textContent = "သိမ်းဆည်းနေပါသည်..."; msg.style.color = "#60a5fa";
+      const payload = {
+          free_limit_enabled: document.getElementById('freeLimitEnabled').checked,
+          free_daily_limit: parseInt(document.getElementById('freeDailyLimit').value) || 1,
+          free_max_seconds: parseInt(document.getElementById('freeMaxSecs').value) || 300,
+          free_allowed_type: document.getElementById('freeAllowedType').value,
+          free_allow_voice_clone: document.getElementById('freeAllowVoiceClone').checked
+      };
+      try {
+          const res = await fetch('/api/owner/settings', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+          if (res.ok) { msg.textContent = "Setting ပြောင်းလဲမှု အောင်မြင်ပါသည်"; msg.style.color = "#4ade80"; } 
+          else { msg.textContent = "Error ဖြစ်နေပါသည်"; msg.style.color = "#f87171"; }
+      } catch (e) { msg.textContent = "Connection Error"; }
+    });
+    async function initAuth() {
+      try {
+        const config = await (await fetch('/api/auth-config')).json();
+        if (config.enabled !== 'true' || !window.supabase) return;
+        const auth = window.supabase.createClient(config.url, config.anon_key);
+        const { data: { session } } = await auth.auth.getSession();
+        accessToken = session?.access_token || '';
+        if (!accessToken) { window.location.assign('/login'); return; }
+        
+        loadMetrics();
+        loadLiveJobs();
+        setInterval(loadLiveJobs, 3000); 
+        loadSettings();
+      } catch (e) {
+        alert('Authentication failed');
+      }
+    }
+
+    function authHeaders() {
+      return { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+    }
+
+    // --- Live Jobs (3 sec auto refresh) ---
+    async function loadLiveJobs() {
+      try {
+        const res = await fetch('/api/owner/jobs-history', { headers: authHeaders() });
+        if (!res.ok) return;
+        const jobs = await res.json();
+        const container = document.getElementById('liveJobsContainer');
+        
+        if (!jobs || jobs.length === 0) {
+          container.innerHTML = '<p style="color: #64748b;">ဗီဒီယို ထုတ်လုပ်နေမှု မရှိသေးပါ (၄ နာရီအတွင်း)</p>';
+          return;
+        }
+
+        container.innerHTML = jobs.map(j => {
+          let badgeClass = '';
+          let badgeText = '';
+          let progressVal = j.progress || 0;
+
+          if (j.status === 'done') { badgeClass = 'completed'; badgeText = 'Completed'; progressVal = 100; } 
+          else if (j.status === 'error' || j.status === 'cancelled') { badgeClass = 'failed'; badgeText = 'Failed'; } 
+          else { badgeClass = 'processing'; badgeText = 'Processing'; }
+
+          let dateText = '-';
+          if (j.created_at) {
+            const d = new Date(j.created_at * 1000);
+            dateText = d.toLocaleString("en-US", { timeZone: "Asia/Yangon", year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+          }
+          let durationSecs = j.duration || 0;
+
+          return `
+            <div class="job-card-live">
+              <div class="job-header-live">
+                <div class="job-title-live">${j.filename || 'Video'}</div>
+                <div class="status-badge ${badgeClass}">${badgeText}</div>
+              </div>
+              <span class="job-email-live">${j.user_email || 'user@example.com'}</span>
+              
+              <div class="job-grid-live">
+                <div class="job-info-col"><span>Progress</span><strong style="color: ${badgeClass === 'processing' ? '#60a5fa' : (badgeClass === 'completed' ? '#4ade80' : '#f87171')};">${progressVal}%</strong></div>
+                <div class="job-info-col"><span>Duration</span><strong>${durationSecs} sec</strong></div>
+                <div class="job-info-col"><span>Created</span><strong>${dateText}</strong></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (e) { console.error("Live jobs fetch error", e); }
+    }
+
+    // --- Full Database History (Manual Click) ---
+    async function loadFullHistory() {
+      const container = document.getElementById('fullHistoryContainer');
+      const table = document.getElementById('fullHistoryTable');
+      const tbody = document.getElementById('fullHistoryBody');
+      const btn = document.getElementById('btnLoadHistory');
+      const loadingTxt = document.getElementById('historyLoadingTxt');
+
+      container.style.display = 'block';
+      table.style.display = 'none';
+      loadingTxt.style.display = 'block';
+      loadingTxt.textContent = 'Database မှတ်တမ်းများ ရှာဖွေနေပါသည်...';
+      btn.textContent = 'Refreshing...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/owner/full-history', { headers: authHeaders() });
+        const data = await res.json();
+
+        if (!data || data.length === 0) {
+          loadingTxt.textContent = 'မှတ်တမ်းဟောင်းများ မရှိသေးပါ';
+        } else {
+          loadingTxt.style.display = 'none';
+          table.style.display = 'table';
+          tbody.innerHTML = data.map(j => {
+            let statusHtml = j.status === 'done' ? '<span style="color:#4ade80; font-weight:bold;">Success</span>' : (j.status === 'error' || j.status === 'cancelled' ? '<span style="color:#f87171; font-weight:bold;">Failed</span>' : '<span style="color:#60a5fa; font-weight:bold;">Running</span>');
+            let dateObj = new Date(j.created_at);
+            let dateStr = isNaN(dateObj) ? '-' : dateObj.toLocaleString("en-US", { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            
+            return `
+              <tr>
+                <td style="color:#94a3b8; font-size: 13px;">${dateStr}</td>
+                <td style="color:#cbd5e1;">${j.google_subject || 'Unknown User'}</td>
+                <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${j.filename}">${j.filename || 'Video'}</td>
+                <td>${j.duration ? Math.round(j.duration) + 's' : '-'}</td>
+                <td>${statusHtml}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        loadingTxt.textContent = 'Error: မှတ်တမ်းများ ဆွဲယူ၍ မရပါ';
+      }
+      
+      btn.textContent = 'မှတ်တမ်းဟောင်းများ ဆွဲထုတ်ရန်';
+      btn.disabled = false;
+    }
+
+    async function loadMetrics() {
+      try {
+        const res = await fetch('/api/owner/metrics', { headers: authHeaders() });
+        if (!res.ok) throw new Error('Owner unauthorized');
+        const data = await res.json();
+        
+        document.getElementById('vipCount').textContent = data.active_vip_count || 0;
+        document.getElementById('trialCount').textContent = data.active_simple_count || 0;
+        document.getElementById('pendingCount').textContent = data.pending_payment_count || 0;
+        document.getElementById('successCount').textContent = data.success_exports || 0;
+        document.getElementById('failCount').textContent = data.fail_exports || 0;
+
+        renderPayments(data.payments || []);
+        renderVIPs(data.members || []); // <--- ဤစာကြောင်းကို အသစ်ထပ်ဖြည့်ပါ
+      } catch (e) {
+        document.getElementById('paymentStatusMsg').textContent = 'Dashboard အချက်အလက် ခေါ်ယူမရပါ';
+      }
+    }
+
+    function renderPayments(list) {
+      const container = document.getElementById('paymentTableContainer');
+      if (!list.length) { container.innerHTML = '<p style="color:#94a3b8;">စစ်ဆေးရန် ငွေလွှဲစာရင်း မရှိပါ</p>'; return; }
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Email</th><th>အမျိုးအစား</th><th>ပမာဏ</th><th>TrxID</th><th>လုပ်ဆောင်ချက်</th></tr>
+          </thead>
+          <tbody>
+            ${list.map(p => `
+              <tr>
+                <td>${p.google_subject}</td><td><b>${p.request_kind === 'credits' ? p.requested_credits + ' Credits' : p.requested_tier}</b></td><td>${Number(p.amount_mmk).toLocaleString()} ကျပ်</td><td>${p.payment_method} · ${p.transaction_id}</td>
+                <td>
+                  <button class="btn btn-success" onclick="approvePayment(${p.id})" style="padding: 5px 10px; font-size:12px;">အတည်ပြု</button>
+                  <button class="btn btn-danger" onclick="rejectPayment(${p.id})" style="padding: 5px 10px; font-size:12px; margin-top:4px;">ပယ်ဖျက်</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // === 🌟 အသစ်ထပ်ဖြည့်သော VIP ဇယားနှင့် ဖြုတ်သည့် Function ===
+    function renderVIPs(members) {
+      const container = document.getElementById('vipListContainer');
+      const vips = members.filter(m => m.plan === 'pro');
+      
+      if (!vips.length) { 
+        container.innerHTML = '<p style="color:#94a3b8;">VIP အသုံးပြုသူ မရှိသေးပါ</p>'; 
+        return; 
+      }
+      
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Email</th><th>Tier</th><th>လုပ်ဆောင်ချက်</th></tr>
+          </thead>
+          <tbody>
+            ${vips.map(v => `
+              <tr>
+                <td style="color: #cbd5e1;">${v.email}</td>
+                <td><span class="status-badge completed">${v.subscription_tier}</span></td>
+                <td>
+                  <button class="btn btn-danger" onclick="demoteUser('${v.email}')" style="padding: 5px 10px; font-size:12px;">VIP မှ ဖြုတ်မည်</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    window.demoteUser = async function(email) {
+      if (!confirm('ဤအကောင့် (' + email + ') ကို VIP မှ ဖြုတ်မှာ သေချာပါသလား?')) return;
+      try {
+        const res = await fetch('/api/owner/demote-user', { 
+          method: 'POST', headers: authHeaders(), body: JSON.stringify({ email: email }) 
+        });
+        if (res.ok) { alert('VIP မှ အောင်မြင်စွာ ဖယ်ရှားပြီးပါပြီ'); loadMetrics(); } 
+        else { alert('မအောင်မြင်ပါ (Error)'); }
+      } catch(e) { alert('Network Error ဖြစ်နေပါသည်'); }
+    }
+    // ====================================================
+
+    async function approvePayment(id) {
+      if (!confirm('ဤငွေလွှဲကို အတည်ပြုမှာ သေချာပါသလား?')) return;
+      const res = await fetch('/api/owner/approve-payment', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ request_id: id }) });
+      if (res.ok) { alert('အတည်ပြုပြီးပါပြီ'); loadMetrics(); }
+    }
+
+    async function rejectPayment(id) {
+      if (!confirm('ဤငွေလွှဲကို ပယ်ဖျက်မှာ သေချာပါသလား?')) return;
+      const res = await fetch('/api/owner/reject-payment', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ request_id: id }) });
+      if (res.ok) { alert('ပယ်ဖျက်ပြီးပါပြီ'); loadMetrics(); }
+    }
+
+    document.getElementById('btnExtendUser').addEventListener('click', async () => {
+      const email = document.getElementById('extendEmail').value.trim();
+      const days = parseInt(document.getElementById('extendDays').value, 10);
+      const msg = document.getElementById('extendMsg');
+      if (!email || days < 1) return;
+      
+      msg.textContent = 'လုပ်ဆောင်နေပါသည်...'; msg.style.color = '#c084fc';
+      try {
+        const res = await fetch('/api/owner/extend-user', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email, days }) });
+        const body = await res.json();
+        if (res.ok) { msg.textContent = body.message || 'အောင်မြင်ပါသည်'; msg.style.color = '#4ade80'; document.getElementById('extendEmail').value = ''; loadMetrics(); }
+        else { msg.textContent = body.detail || 'မအောင်မြင်ပါ'; msg.style.color = '#f87171'; }
+      } catch { msg.textContent = 'Error'; }
+    });
+
+    window.onload = initAuth;
+  </script>
+</body>
+</html>
