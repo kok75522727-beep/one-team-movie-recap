@@ -611,7 +611,9 @@ async def get_history(authorization: Optional[str] = Header(None)):
             "duration": r.get("duration", 0),
             "date": str(r.get("created_at", ""))[:10],
             "download_url": r.get("download_url", ""),
-            "thumb_url": r.get("thumb_url", "")
+            "thumb_url": r.get("thumb_url", ""),
+            "progress": r.get("progress", 0),
+            "message": r.get("message", "အမည်မသိ Error")
         })
     return history_list
 
