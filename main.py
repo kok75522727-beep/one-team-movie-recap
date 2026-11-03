@@ -499,22 +499,21 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     print(f"Telegram Bot Send Error: {tg_err}")
 
         except Exception as exc:
-        db.record_failure(member, duration_seconds, entitlement)
-        err_str = str(exc)
-        
-        if "frame=" in err_str and "speed=" in err_str:
-            clean_err = "Video ပေါင်းစပ်ရာတွင် အခက်အခဲဖြစ်ပေါ်ခဲ့ပါသည်။ (မူရင်း Video ဖိုင်ကို စစ်ဆေးပါ)"
-        else:
-            # ခလုတ်နှိပ်မရခြင်းကို ဖြေရှင်းရန် (Enter များနှင့် မျက်တောင်များကို ဖယ်ရှားခြင်း)
-            safe_err = err_str.replace('\n', ' ').replace("'", "").replace('"', "")
-            clean_err = safe_err[:150] + "..." if len(safe_err) > 150 else safe_err
+            db.record_failure(member, duration_seconds, entitlement)
+            err_str = str(exc)
             
-        final_msg = f"❌ Error: {clean_err}"
-        
-        update_job(job_id, {"status": "error", "error": err_str, "message": final_msg})
-        db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
-            "status": "error", "message": final_msg
-        })
+            if "frame=" in err_str and "speed=" in err_str:
+                clean_err = "Video ပေါင်းစပ်ရာတွင် အခက်အခဲဖြစ်ပေါ်ခဲ့ပါသည်။ (မူရင်း Video ဖိုင်ကို စစ်ဆေးပါ)"
+            else:
+                safe_err = err_str.replace('\n', ' ').replace("'", "").replace('"', "")
+                clean_err = safe_err[:150] + "..." if len(safe_err) > 150 else safe_err
+                
+            final_msg = f"❌ Error: {clean_err}"
+            
+            update_job(job_id, {"status": "error", "error": err_str, "message": final_msg})
+            db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
+                "status": "error", "message": final_msg
+            })
         
         user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
             
