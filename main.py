@@ -505,7 +505,7 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             "status": "error", "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"
             })
         
-        user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
+            user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
             
             # Admin Group သို့ Error ပို့ရန်
             send_telegram_alert(f"⚠️ <b>Video Recap ထုတ်လုပ်မှု မအောင်မြင်ပါ!</b>\n\n👤 <b>အသုံးပြုသူ:</b> {user_name}\n📁 <b>ဖိုင်အမည်:</b> {proj.get('filename', 'video.mp4')}\n❌ <b>Error:</b> <code>{str(exc)[-250:]}</code>")
