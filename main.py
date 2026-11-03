@@ -499,11 +499,11 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     print(f"Telegram Bot Send Error: {tg_err}")
 
         except Exception as exc:
-        db.record_failure(member, duration_seconds, entitlement)
-        update_job(job_id, {"status": "error", "error": str(exc), "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"})
-        db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
+            db.record_failure(member, duration_seconds, entitlement)
+            update_job(job_id, {"status": "error", "error": str(exc), "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"})
+            db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
             "status": "error", "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"
-        })
+            })
         
         user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
             
