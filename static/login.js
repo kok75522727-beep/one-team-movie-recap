@@ -31,7 +31,7 @@ async function signup() {
 }
 async function googleLogin() {
   if (!auth) return; message('Google သို့သွားနေပါတယ်…');
-  const { error } = await auth.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: 'https://oneteamrecap.site/login' } });
+  const { error } = await auth.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: 'http://169.58.181.87:8080/login' } });
   if (error) message('Google Login setting မပြည့်သေးပါ။ Admin ကိုဆက်သွယ်ပါ', true);
 }
 $('#emailLogin').addEventListener('click', emailLogin); $('#signup').addEventListener('click', signup); $('#googleLogin').addEventListener('click', googleLogin); window.setTimeout(setup, 0);
