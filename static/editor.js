@@ -537,19 +537,26 @@ function renderHistoryCards(filterType) {
     list.innerHTML = filteredData.map(item => {
         const isSuccess = (item.status === 'success' || item.status === 'done'); 
         let statusBadge = '';
+        let errorBtn = '';
+
         if (isSuccess) {
             statusBadge = '<span class="history-status-badge success" style="position: static; display: inline-block; margin-bottom: 8px;">✅ ပြီးဆုံး</span>';
         } else if (item.status === 'running' || item.status === 'queued') {
-            statusBadge = '<span class="history-status-badge" style="position: static; display: inline-block; margin-bottom: 8px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.4);">⏳ လုပ်နေဆဲ</span>';
+            statusBadge = `<span class="history-status-badge" style="position: static; display: inline-block; margin-bottom: 8px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.4);">⏳ လုပ်နေဆဲ (${item.progress || 0}%)</span>`;
         } else {
             statusBadge = '<span class="history-status-badge fail" style="position: static; display: inline-block; margin-bottom: 8px;">❌ မအောင်မြင်ပါ</span>';
+            errorBtn = `<button onclick="alert('⚠️ အကြောင်းရင်း: ' + '${escapeHtml(item.message || 'အမည်မသိ Error').replace(/'/g, '\\\'')}')" style="background: #3f1616; color: #f87171; border: 1px solid #7f1d1d; padding: 4px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; margin-left: 8px; font-weight: bold; margin-bottom: 8px;">⚠️ အကြောင်းရင်းကြည့်မယ်</button>`;
         }
+        
         const dur = Math.round(item.duration); const mins = Math.floor(dur / 60); const secs = dur % 60; const durText = `${mins}:${secs.toString().padStart(2, '0')}`;
         
         return `<div class="history-card">
                   <div class="history-details">
                     <div style="display: flex; justify-content: space-between; align-items: start;">
-                       ${statusBadge}
+                       <div>
+                         ${statusBadge}
+                         ${errorBtn}
+                       </div>
                        <span style="font-size: 11px; color: #94a3b8; font-weight: bold;">⏱ ${durText}</span>
                     </div>
                     <div class="history-title">${escapeHtml(item.filename || 'Video Recap')}</div>
