@@ -499,14 +499,24 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     print(f"Telegram Bot Send Error: {tg_err}")
 
         except Exception as exc:
-            db.record_failure(member, duration_seconds, entitlement)
-            actual_error = f"Error: {str(exc)}"
-            update_job(job_id, {"status": "error", "error": str(exc), "message": actual_error})
-            db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
-                "status": "error", "message": actual_error
-            })
+        db.record_failure(member, duration_seconds, entitlement)
+        err_str = str(exc)
+        
+        if "frame=" in err_str and "speed=" in err_str:
+            clean_err = "Video ပေါင်းစပ်ရာတွင် အခက်အခဲဖြစ်ပေါ်ခဲ့ပါသည်။ (မူရင်း Video ဖိုင်ကို စစ်ဆေးပါ)"
+        else:
+            # ခလုတ်နှိပ်မရခြင်းကို ဖြေရှင်းရန် (Enter များနှင့် မျက်တောင်များကို ဖယ်ရှားခြင်း)
+            safe_err = err_str.replace('\n', ' ').replace("'", "").replace('"', "")
+            clean_err = safe_err[:150] + "..." if len(safe_err) > 150 else safe_err
             
-            user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
+        final_msg = f"❌ Error: {clean_err}"
+        
+        update_job(job_id, {"status": "error", "error": err_str, "message": final_msg})
+        db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
+            "status": "error", "message": final_msg
+        })
+        
+        user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
             
             # Admin Group သို့ Error ပို့ရန်
             send_telegram_alert(f"⚠️ <b>Video Recap ထုတ်လုပ်မှု မအောင်မြင်ပါ!</b>\n\n👤 <b>အသုံးပြုသူ:</b> {user_name}\n📁 <b>ဖိုင်အမည်:</b> {proj.get('filename', 'video.mp4')}\n❌ <b>Error:</b> <code>{str(exc)[-250:]}</code>")
@@ -539,11 +549,13 @@ async def get_job(job_id: str):
     records = db._request("GET", f"/rest/v1/jobs?job_id=eq.{job_id}&limit=1", headers=db._service_headers())
     if records:
         r = records[0]
+        # Live UI တွင် အတိအကျမပေါ်စေဘဲ မူရင်းအတိုင်း ဖုံးကွယ်ထားရန်
+        display_msg = "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ" if r.get("status") == "error" else r.get("message")
         return {
             "id": r.get("job_id"),
             "status": r.get("status"),
             "progress": r.get("progress"),
-            "message": r.get("message"),
+            "message": display_msg,
             "step": "render" if r.get("progress", 0) > 80 else "voice",
             "download_url": r.get("download_url"),
             "thumb_url": r.get("thumb_url"),
@@ -551,6 +563,9 @@ async def get_job(job_id: str):
         }
     job = load_data("job", job_id)
     if not job: raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.get("status") == "error":
+        job["message"] = "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"
     return job
 
 @app.post("/api/jobs/{job_id}/cancel")
