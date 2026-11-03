@@ -395,7 +395,8 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
                 "4. 100% DIALOGUE COVERAGE: You MUST include EVERY SINGLE spoken dialogue. DO NOT summarize conversations. Weave the exact direct speech naturally into the story.\n"
                 "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Write exactly like a local Myanmar person narrating an exciting movie to a friend.\n"
                 "6. NO GAPS: Cover the entire story from start to finish without skipping any scenes.\n"
-                "7. Return ONLY the spoken text with exact timestamps inside [ ]."
+                "7. Return ONLY the spoken text with exact timestamps inside [ ].\n"
+                "8. STRICT LENGTH CONTROL (CRITICAL): The length of your spoken text MUST strictly match the duration of the timestamp. Do NOT write long paragraphs for short scenes (e.g., maximum 5-7 words for a 2-second scene)."
             )
 
 
@@ -1046,6 +1047,10 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         vid_dur = float(source["duration"])
         raw_tts_dur = get_audio_duration(raw_tts_path)
         
+        # 📌 UI မှ Voice Speed ကို ရယူ၍ အသံကြာချိန် အမှန်ကို တွက်ချက်ခြင်း
+        audio_speed = float(settings.get("speed") or settings.get("voiceSpeed") or 1.0)
+        actual_tts_dur = raw_tts_dur / audio_speed
+        
         # 📌 1. [အရင် မူလစနစ်အတိုင်း] AI ရေးသည့် အချိန်မှတ်များကို ဂွင်း [ ] ဖြင့် ဖတ်မည်
         pattern = r'\[\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\s*\]\s*(.*)'
         segments = []
@@ -1100,16 +1105,20 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             v_start = seg["v_start"]
             v_end = seg["v_end"]
             
-            segment_audio_dur = (seg["chars"] / total_chars) * raw_tts_dur
+            # 📌 မူလကြာချိန်အစား Voice Speed တင်ထားသော ကြာချိန်တို (actual_tts_dur) ကို သုံးမည်
+            segment_audio_dur = (seg["chars"] / total_chars) * actual_tts_dur
             v_chunk_dur = max(0.1, v_end - v_start)
             
-            # ဗီဒီယိုကို လိုအပ်လျှင် နှေးမည်၊ လိုအပ်လျှင် မြန်မည်
-            stretch_factor = max(0.2, segment_audio_dur / v_chunk_dur)
+            # 📌 ဗီဒီယိုကို လိုအပ်လျှင် နှေးမည်၊ မြန်မည် (ရုပ်အရမ်းမထစ်စေရန် အများဆုံး ၁.၅ ဆသာ နှေးခွင့်ပေးမည်)
+            stretch_factor = max(0.2, min(1.5, segment_audio_dur / v_chunk_dur))
+            
+            # 📌 Limit ကြောင့် ပြောင်းလဲသွားသော ဗီဒီယိုကြာချိန်အမှန်ကို ပြန်တွက်မည်
+            actual_chunk_dur = v_chunk_dur * stretch_factor
             
             dynamic_v_filters.append(f"[0:v]trim=start={v_start}:end={v_end},setpts={stretch_factor:.4f}*(PTS-STARTPTS)[vpart{part_idx}]")
             concat_inputs.append(f"[vpart{part_idx}]")
             part_idx += 1
-            total_output_dur += segment_audio_dur
+            total_output_dur += actual_chunk_dur
             
         if part_idx == 0:
             raise RuntimeError("❌ Error: ဗီဒီယို ဖြတ်တောက်ခြင်း မအောင်မြင်ပါ။")
@@ -1213,7 +1222,18 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             graph += f";[{current_v}]ass=filename='{str(ass_path).replace(':', r'\:')}':fontsdir='{str(font_dir).replace(':', r'\:')}'[{next_v}]"
             current_v = next_v
 
-        a_filters = ["[1:a]aresample=44100,aformat=channel_layouts=stereo,atempo=1.0[tts]"]
+        # 📌 Audio ကို UI မှ Voice Speed (audio_speed) အတိုင်း တပြေးညီ မြန်စေရန်
+        t_rem = audio_speed
+        t_filters = []
+        while t_rem > 2.0:
+            t_filters.append("atempo=2.0")
+            t_rem /= 2.0
+        while t_rem < 0.5:
+            t_filters.append("atempo=0.5")
+            t_rem /= 0.5
+        t_filters.append(f"atempo={t_rem:.4f}")
+        
+        a_filters = [f"[1:a]aresample=44100,aformat=channel_layouts=stereo,{','.join(t_filters)}[tts]"]
         current_a_mix = "tts"
         
         bgm_path_str = settings.get("music_path")
