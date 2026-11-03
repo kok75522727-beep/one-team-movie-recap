@@ -500,9 +500,10 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
 
         except Exception as exc:
             db.record_failure(member, duration_seconds, entitlement)
-            update_job(job_id, {"status": "error", "error": str(exc), "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"})
+            actual_error = f"Error: {str(exc)}"
+            update_job(job_id, {"status": "error", "error": str(exc), "message": actual_error})
             db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
-                "status": "error", "message": "Video ထုတ်လုပ်မှု မအောင်မြင်ပါ"
+                "status": "error", "message": actual_error
             })
             
             user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
