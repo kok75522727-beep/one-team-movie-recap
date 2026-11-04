@@ -395,8 +395,7 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
                 "4. 100% DIALOGUE COVERAGE: You MUST include EVERY SINGLE spoken dialogue. DO NOT summarize conversations. Weave the exact direct speech naturally into the story.\n"
                 "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Write exactly like a local Myanmar person narrating an exciting movie to a friend.\n"
                 "6. NO GAPS: Cover the entire story from start to finish without skipping any scenes.\n"
-                "7. Return ONLY the spoken text with exact timestamps inside [ ].\n"
-                "8. STRICT LENGTH CONTROL (CRITICAL): The length of your spoken text MUST strictly match the duration of the timestamp. Do NOT write long paragraphs for short scenes (e.g., maximum 5-7 words for a 2-second scene)."
+                "7. Return ONLY the spoken text with exact timestamps inside [ ]."
             )
 
 
