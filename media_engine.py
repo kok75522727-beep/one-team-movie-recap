@@ -1047,7 +1047,7 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         vid_dur = float(source["duration"])
         raw_tts_dur = get_audio_duration(raw_tts_path)
         
-        # 📌 (အသစ်) UI မှ Voice Speed ကို ရယူ၍ အသံကြာချိန် အမှန်ကို တွက်ချက်ခြင်း
+        # 📌 UI မှ Voice Speed ကို ရယူ၍ အသံကြာချိန် အမှန်ကို တွက်ချက်ခြင်း
         audio_speed = float(settings.get("speed") or settings.get("voiceSpeed") or 1.0)
         actual_tts_dur = raw_tts_dur / audio_speed
         
@@ -1078,17 +1078,23 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         if not segments:
             raise RuntimeError("❌ Error: ဇာတ်ညွှန်းထဲတွင် [00:10 - 00:15] ကဲ့သို့ အချိန်မှတ်များ မပါဝင်ပါ။ AI အား ဇာတ်ညွှန်းပြန်ရေးခိုင်းပါ။")
 
+        # 📌 2. [ULTIMATE CAPCUT LOGIC အသစ်] အလွတ်နေရာ လုံးဝမထားဘဲ အစကနေအဆုံး တွဲချည်မည်
         total_chars = sum(seg["chars"] for seg in segments)
         if total_chars == 0: total_chars = 1
 
         for i in range(len(segments)):
-            if i == 0: segments[i]["v_start"] = 0.0
-            else: segments[i]["v_start"] = segments[i-1]["v_end"]
+            if i == 0:
+                segments[i]["v_start"] = 0.0 # ပထမဆုံးအခန်းကို 0 မှ စမည်
+            else:
+                segments[i]["v_start"] = segments[i-1]["v_end"] # အရင်အခန်းဆုံးသည့်နေရာမှ ဆက်စမည်
                 
-            if i == len(segments) - 1: segments[i]["v_end"] = vid_dur
-            elif segments[i]["v_end"] < segments[i]["v_start"] + 0.1: segments[i]["v_end"] = segments[i]["v_start"] + 0.1
+            if i == len(segments) - 1:
+                segments[i]["v_end"] = vid_dur # 📌 နောက်ဆုံးအခန်းကို ဗီဒီယိုအဆုံးထိ ဆွဲယူမည်
+            elif segments[i]["v_end"] < segments[i]["v_start"] + 0.1:
+                segments[i]["v_end"] = segments[i]["v_start"] + 0.1
                 
-            if segments[i]["v_end"] > vid_dur: segments[i]["v_end"] = vid_dur
+            if segments[i]["v_end"] > vid_dur:
+                segments[i]["v_end"] = vid_dur
 
         dynamic_v_filters, concat_inputs = [], []
         part_idx = 0
@@ -1099,17 +1105,20 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             v_start = seg["v_start"]
             v_end = seg["v_end"]
             
-            # 📌 မူလကြာချိန်အစား Voice Speed ဖြင့် စားထားသော ကြာချိန်တို (actual_tts_dur) ကို သုံးမည်
+            # 📌 မူလကြာချိန်အစား Voice Speed တင်ထားသော ကြာချိန်တို (actual_tts_dur) ကို သုံးမည်
             segment_audio_dur = (seg["chars"] / total_chars) * actual_tts_dur
             v_chunk_dur = max(0.1, v_end - v_start)
             
-            # 📌 ဗီဒီယိုကို လိုအပ်လျှင် နှေးမည်၊ မြန်မည် (1.5 Limit ကို ပြန်ဖြုတ်ထားသည်)
-            stretch_factor = max(0.2, segment_audio_dur / v_chunk_dur)
+            # 📌 ဗီဒီယိုကို လိုအပ်လျှင် နှေးမည်၊ မြန်မည် (ရုပ်အရမ်းမထစ်စေရန် အများဆုံး ၁.၅ ဆသာ နှေးခွင့်ပေးမည်)
+            stretch_factor = max(0.2, min(1.5, segment_audio_dur / v_chunk_dur))
+            
+            # 📌 Limit ကြောင့် ပြောင်းလဲသွားသော ဗီဒီယိုကြာချိန်အမှန်ကို ပြန်တွက်မည်
+            actual_chunk_dur = v_chunk_dur * stretch_factor
             
             dynamic_v_filters.append(f"[0:v]trim=start={v_start}:end={v_end},setpts={stretch_factor:.4f}*(PTS-STARTPTS)[vpart{part_idx}]")
             concat_inputs.append(f"[vpart{part_idx}]")
             part_idx += 1
-            total_output_dur += segment_audio_dur
+            total_output_dur += actual_chunk_dur
             
         if part_idx == 0:
             raise RuntimeError("❌ Error: ဗီဒီယို ဖြတ်တောက်ခြင်း မအောင်မြင်ပါ။")
@@ -1224,17 +1233,6 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             t_rem /= 0.5
         t_filters.append(f"atempo={t_rem:.4f}")
         
-        # 📌 (အသစ်) Audio ကို UI မှ Voice Speed (audio_speed) အတိုင်း တပြေးညီ မြန်စေရန်
-        t_rem = audio_speed
-        t_filters = []
-        while t_rem > 2.0:
-            t_filters.append("atempo=2.0")
-            t_rem /= 2.0
-        while t_rem < 0.5:
-            t_filters.append("atempo=0.5")
-            t_rem /= 0.5
-        t_filters.append(f"atempo={t_rem:.4f}")
-        
         a_filters = [f"[1:a]aresample=44100,aformat=channel_layouts=stereo,{','.join(t_filters)}[tts]"]
         current_a_mix = "tts"
         
@@ -1248,13 +1246,10 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             
         graph += ";" + ";".join(a_filters)
 
-        # 📌 (အသစ်) RAM ပြည့်မသွားစေရန် threads နှင့် max_muxing_queue_size ထည့်သွင်းခြင်း
         cmd = inputs + [
             "-filter_complex", graph, 
             "-map", f"[{current_v}]", "-map", "[a]", 
             "-c:v", "libx264", "-preset", "faster", "-crf", "26", "-pix_fmt", "yuv420p", "-r", "30",
-            "-threads", "4",
-            "-max_muxing_queue_size", "1024",
             "-c:a", "aac", "-b:a", "128k", "-t", f"{final_video_duration:.3f}", "-movflags", "+faststart", str(output_path)
         ]
         
