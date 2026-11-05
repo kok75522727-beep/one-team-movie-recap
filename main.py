@@ -389,6 +389,11 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             script = media_engine.generate_script(api_key, video_path, "video/mp4", settings.get("language", "Myanmar"), int(duration_seconds), settings.get("tone", "Cinematic"), settings.get("recapType", "Movie Recap"), "Natural", update_progress, settings.get("groq_api_key", ""))
             settings["script"] = script
 
+            # --- အသစ်ထည့်ရန်: Raw to Recap တွင် UI ကိုကျော်ပြီး Normal Speed (1.0) အတိုင်း အရင်ထားရန် ---
+            if settings.get("recapType", "") in ["Raw to Recap", "Raw to reacp"]:
+                settings["speed"] = 1.0
+                settings["voiceSpeed"] = 1.0
+
             if settings.get("recapType", "") == "Movie Subtitle":
                 update_progress(65, "စာတန်းထိုးအတွက်ဖြစ်၍ မြန်မာအသံ မထုတ်ပါ")
                 tts_wav = b""
