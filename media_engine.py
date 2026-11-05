@@ -389,16 +389,14 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
                 f"You are a Master Movie Recapper and Voice Director. Watch the visual frames AND listen to the audio carefully.\n"
                 f"Provide a 100% COMPLETE, highly detailed recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
                 "CRITICAL RULES:\n"
-                "1. STRICT TAGGED TIMESTAMPS (CRITICAL): Every paragraph MUST begin with a specific tag and timestamp strictly inside SQUARE BRACKETS. You have TWO tag options:\n"
-                "   - For action, movement, or expressions WITHOUT dialogue, use: [ACTION | 00:00 - 00:05]\n"
-                "   - For scenes WITH character spoken dialogue, use: [DIALOGUE | 00:05 - 00:10]\n"
-                "   NEVER omit the brackets [ ] or the tags (ACTION/DIALOGUE). Failure to use this exact format will crash the system!\n"
+                "1. STRICT TIMESTAMP FORMAT (CRITICAL): Every single paragraph MUST begin with a timestamp strictly inside SQUARE BRACKETS. Example: [00:00 - 00:05]. NEVER use ( ) parentheses, NEVER omit the brackets [ ]. Failure to use [ ] will crash the system!\n"
                 "2. STRICT TIME LIMIT: Do NOT write any timestamp beyond the actual video duration.\n"
-                "3. NARRATOR STYLE: Describe actions and weave direct speeches naturally like you are narrating an exciting movie to a friend.\n"
-                "4. 100% DIALOGUE COVERAGE: You MUST include EVERY SINGLE spoken dialogue in the [DIALOGUE] tagged sections.\n"
-                "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Use completely natural everyday Myanmar conversational tone.\n"
-                "6. NO GAPS: Cover the entire story from start to finish continuously without skipping any seconds between timestamps.\n"
-                "7. Return ONLY the spoken text with exact tagged timestamps inside [ ]."
+                "3. MICRO-EXPRESSIONS & EMOTIONS: Do NOT just translate the audio. You MUST deeply observe and describe the characters' exact facial expressions, body language, feelings, and tone of voice.\n"
+                "4. 100% DIALOGUE COVERAGE: You MUST include EVERY SINGLE spoken dialogue. DO NOT summarize conversations. Weave the exact direct speech naturally into the story.\n"
+                "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Write exactly like a local Myanmar person narrating an exciting movie to a friend.\n"
+                "6. NO GAPS: Cover the entire story from start to finish without skipping any scenes.\n"
+                "7. Return ONLY the spoken text with exact timestamps inside [ ].\n"
+                "8. STRICT LENGTH CONTROL (CRITICAL): The length of your spoken text MUST strictly match the duration of the timestamp. Do NOT write long paragraphs for short scenes (e.g., maximum 5-7 words for a 2-second scene)."
             )
 
 
@@ -1049,8 +1047,6 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         vid_dur = float(source["duration"])
         
         # --- အဆင့် (၁): AI ဇာတ်ညွှန်းမှ အချိန်မှတ်နှင့် အမျိုးအစား (Action/Dialogue) ဖတ်ယူခြင်း ---
-        # AI က [ACTION | 00:00 - 00:05] သို့မဟုတ် [DIALOGUE | 00:05 - 00:10] လို့ ရေးထားမယ်လို့ ယူဆပါတယ်။
-        # ပုံမှန် [00:00 - 00:05] မျိုးဆိုရင်လည်း ဖတ်နိုင်အောင် ပြင်ဆင်ထားပါတယ်။
         pattern = r'\[\s*(?:(ACTION|DIALOGUE)\s*\|\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\s*\]\s*(.*)'
         script_segments = []
         
@@ -1061,7 +1057,7 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
                 text = clean_script_text(text)
                 if not text: continue
                 
-                tag = (tag or "ACTION").upper() # Tag မပါရင် Action လို့ အကြမ်းဖျင်း ယူဆမည်
+                tag = (tag or "ACTION").upper() 
                 
                 def parse_sec(t_str):
                     if not t_str: return 0.0
@@ -1086,8 +1082,7 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         if not script_segments:
             raise RuntimeError("❌ Error: ဇာတ်ညွှန်းထဲတွင် [ACTION | 00:10 - 00:15] ကဲ့သို့ အချိန်မှတ်များ မပါဝင်ပါ။")
 
-        # --- အဆင့် (၂): TTS မှ အသံကြာချိန် အတိအကျ တွက်ချက်ခြင်း (The Magic) ---
-        # Microsoft TTS စနစ်ကိုသုံးပြီး စာကြောင်းတိုင်းရဲ့ ကြာချိန်ကို ရှာပါမယ်။
+        # --- အဆင့် (၂): TTS မှ အသံကြာချိန် အတိအကျ တွက်ချက်ခြင်း ---
         voice = str(settings.get("voice", "Nilar"))
         selected_voice = MICROSOFT_VOICES.get(voice, DEFAULT_MICROSOFT_VOICE)
         speed_factor = float(settings.get("speed", 1.0))
@@ -1101,12 +1096,9 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         
         speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
         
-        # Audio ဖန်တီးမယ့်အစား အချိန်မှတ် (Duration) တွေပဲ အရင်ဆွဲထုတ်ပါမယ်။
-        # တွက်ချက်မှု မြန်စေရန် စာကြောင်းများကို တစ်စုတစ်စည်းတည်း ဖတ်ပြီး အချိန်မှတ်ယူမည်
         for seg in script_segments:
             ssml = f'<speak version="1.0" xml:lang="my-MM" xmlns="http://www.w3.org/2001/10/synthesis"><voice name="{selected_voice}"><prosody rate="{rate_str}">{xml_escape(seg["text"])}</prosody></voice></speak>'
             
-            # Dummy synthesizer for timing only
             stream = speechsdk.audio.PullAudioOutputStream()
             audio_config = speechsdk.audio.AudioOutputConfig(stream=stream)
             synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
@@ -1120,12 +1112,18 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             result = synthesizer.speak_ssml_async(ssml).get()
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted and word_boundaries:
-                # ဤစာကြောင်း၏ စုစုပေါင်း အသံကြာချိန် (စက္ကန့်)
                 total_dur_ms = word_boundaries[-1]["offset_ms"] + word_boundaries[-1]["duration_ms"]
                 seg["audio_dur"] = total_dur_ms / 1000.0
             else:
-                 # Fallback: Error တက်ခဲ့လျှင် သို့မဟုတ် စာတိုလွန်းလျှင် စာလုံးရေဖြင့် အကြမ်းဖျင်းတွက်မည်
                  seg["audio_dur"] = max(1.0, seg["chars"] * 0.1)
+                 
+        total_calculated_dur = sum(seg["audio_dur"] for seg in script_segments)
+        actual_full_audio_dur = get_audio_duration(raw_tts_path)
+        
+        if actual_full_audio_dur > total_calculated_dur and total_calculated_dur > 0:
+            scale_ratio = actual_full_audio_dur / total_calculated_dur
+            for seg in script_segments:
+                seg["audio_dur"] *= scale_ratio
 
         # --- အဆင့် (၃): ဗီဒီယိုကို အသံအချိန်နှင့် ကွက်တိညှိခြင်း (Continuous Dynamic Sync) ---
         dynamic_v_filters, concat_inputs = [], []
@@ -1138,7 +1136,6 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             v_end = seg["v_end"]
             audio_dur = seg["audio_dur"]
             
-            # (က) ကြားထဲက စကားမပြောတဲ့ ကွက်လပ် (Gap) ရှိခဲ့ရင် (Normal Speed ဖြင့် မဖြတ်ဘဲ ယူမည်)
             if v_start > current_v_time:
                 gap_dur = v_start - current_v_time
                 dynamic_v_filters.append(f"[0:v]trim=start={current_v_time}:end={v_start},setpts=PTS-STARTPTS[vpart{part_idx}]")
@@ -1147,18 +1144,9 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
                 total_output_dur += gap_dur
             
             v_chunk_dur = max(0.1, v_end - v_start)
+            stretch_factor = audio_dur / v_chunk_dur
+            stretch_factor = max(0.1, min(10.0, stretch_factor)) 
             
-            # (ခ) Tag အလိုက် ချိန်ကိုက်ခြင်း
-            if seg["tag"] == "DIALOGUE":
-                 # Dialogue ဆိုလျှင် ရုပ်နှင့်အသံ အတိအကျညီအောင် (အသံကြာချိန်အတိုင်း) Stretch လုပ်မည်
-                 stretch_factor = audio_dur / v_chunk_dur
-                 # လွန်ကဲစွာ နှေး/မြန်ခြင်းကို တားဆီးရန် ကန့်သတ်ချက် (0.2 မှ 4.0 အတွင်း)
-                 stretch_factor = max(0.2, min(4.0, stretch_factor)) 
-            else:
-                 # Action ဆိုလျှင် ရုပ်ကို လွန်ကဲစွာ မနှေးစေရန် အများဆုံး 1.5x သာ နှေးခွင့်ပေးမည် (သဘာဝကျစေရန်)
-                 stretch_factor = audio_dur / v_chunk_dur
-                 stretch_factor = max(0.5, min(1.5, stretch_factor))
-                 
             actual_segment_dur = v_chunk_dur * stretch_factor
             
             dynamic_v_filters.append(f"[0:v]trim=start={v_start}:end={v_end},setpts={stretch_factor:.4f}*(PTS-STARTPTS)[vpart{part_idx}]")
@@ -1168,7 +1156,6 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             
             current_v_time = v_end
             
-        # (ဂ) နောက်ဆုံးအပိုင်းမှာ ကျန်နေတဲ့ Video ကို အဆုံးထိ Normal Speed ဖြင့် မဖြတ်ဘဲ ယူမည်
         if current_v_time < vid_dur:
             gap_dur = vid_dur - current_v_time
             dynamic_v_filters.append(f"[0:v]trim=start={current_v_time}:end={vid_dur},setpts=PTS-STARTPTS[vpart{part_idx}]")
@@ -1179,10 +1166,9 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         if part_idx == 0:
             raise RuntimeError("❌ Error: ဗီဒီယို ဖြတ်တောက်ခြင်း မအောင်မြင်ပါ။")
             
-        concat_str = "".join(concat_inputs) + f"concat=n={part_idx}:v=1:a=0[v_dynamic]"
-        final_video_duration = total_output_dur
-
-        # 📌 ၄။ Visual Filters (Aesthetic) အပိုင်း
+        concat_str = "".join(concat_inputs) + f"concat=n={part_idx}:v=1:a=0[v_dynamic_synced]"
+        
+        # --- အဆင့် (၄): Visual Filters (Blur, Logo, Subtitles) ကို Dynamic Synced Video ပေါ်တွင် တင်ခြင်း ---
         aesthetic_filters = ["fps=30"]
         if settings.get("mirror"): aesthetic_filters.append("hflip")
         if settings.get("zoom_enabled"): aesthetic_filters.append("crop=iw*0.96:ih*0.96")
@@ -1196,10 +1182,10 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         else:
             aesthetic_filters.extend([f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos", f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"])
             
-        graph = ";".join(dynamic_v_filters + [concat_str]) + f";[v_dynamic]{','.join(aesthetic_filters)}[v0]"
-        current_v = "v0"
+        graph = ";".join(dynamic_v_filters + [concat_str]) + f";[v_dynamic_synced]{','.join(aesthetic_filters)}[v_filtered]"
+        current_v = "v_filtered"
 
-        # --- Blurs, Logos & Subtitles (အောက်ပိုင်းမှာ မူရင်းကုဒ်အတိုင်း ဆက်သွားပါမည်) ---
+        # Blur Masks
         if settings.get("blur_enabled"):
             raw_b = int(settings.get("blur_strength", 10))
             luma_r, chroma_r = max(1, min(20, raw_b)), max(1, min(14, raw_b // 2 if raw_b > 2 else 1))
@@ -1211,23 +1197,21 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
                 graph += f";[{current_v}]split=2[bg{idx}][toblur{idx}];[toblur{idx}]crop={bw}:{bh}:{bx}:{by},boxblur={luma_r}:{chroma_r}[blurred{idx}];[bg{idx}][blurred{idx}]overlay={bx}:{by}[{next_v}]"
                 current_v = next_v
 
+        # Logo
         if settings.get("logo_type") == "moving":
             import time
             user_font = str(settings.get("logo_font", "Beloved Bunny"))
             target_font_path = FONT_FILES.get(user_font)
-            if not target_font_path or not target_font_path.exists():
-                raise RuntimeError(f"❌ Error: ဆာဗာပေါ်တွင် ဖောင့်ဖိုင် ({user_font}) ကို ရှာမတွေ့ပါ။ fonts ဖိုင်တွဲကို စစ်ဆေးပါ။")
-            try: safe_font = temp_dir / f"safe_font_{int(time.time() * 1000)}.ttf"
-            except NameError: safe_font = Path(tempfile.gettempdir()) / f"safe_font_{int(time.time() * 1000)}.ttf"
-            shutil.copy2(target_font_path, safe_font)
-            font_path = str(safe_font).replace('\\', '/').replace(':', r'\:')
-            run_text = str(settings.get("logo_text", "")).strip()
-            if not run_text: run_text = "Test Logo"
-            safe_text = run_text.replace("'", "\u2019").replace(":", r"\:")
-            next_v = "vtestlogo"
-            graph += f";[{current_v}]drawtext=fontfile='{font_path}':text='{safe_text}':x='abs(w-tw-abs(mod(t*150,max(1,(w-tw)*2))-(w-tw)))':y='abs(h-th-abs(mod(t*100,max(1,(h-th)*2))-(h-th)))':fontsize=h*0.05:fontcolor=white:shadowcolor=black:shadowx=2:shadowy=2[{next_v}]"
-            current_v = next_v
-
+            if target_font_path and target_font_path.exists():
+                try: safe_font = temp_dir / f"safe_font_{int(time.time() * 1000)}.ttf"
+                except NameError: safe_font = Path(tempfile.gettempdir()) / f"safe_font_{int(time.time() * 1000)}.ttf"
+                shutil.copy2(target_font_path, safe_font)
+                font_path = str(safe_font).replace('\\', '/').replace(':', r'\:')
+                run_text = str(settings.get("logo_text", "")).strip() or "Test Logo"
+                safe_text = run_text.replace("'", "\u2019").replace(":", r"\:")
+                next_v = "vtestlogo"
+                graph += f";[{current_v}]drawtext=fontfile='{font_path}':text='{safe_text}':x='abs(w-tw-abs(mod(t*150,max(1,(w-tw)*2))-(w-tw)))':y='abs(h-th-abs(mod(t*100,max(1,(h-th)*2))-(h-th)))':fontsize=h*0.05:fontcolor=white:shadowcolor=black:shadowx=2:shadowy=2[{next_v}]"
+                current_v = next_v
         elif settings.get("logo_type", "static") == "static":
             logo_str = settings.get("logo_path") or settings.get("watermark_path")
             logo_text = str(settings.get("logo_text", "")).strip()
@@ -1244,18 +1228,16 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
                 text_img_path = temp_dir / "logo.png"
                 user_font = str(settings.get("logo_font", "Beloved Bunny"))
                 font_path_to_use = FONT_FILES.get(user_font)
-                if not font_path_to_use or not font_path_to_use.exists():
-                    raise RuntimeError(f"❌ Error: ဆာဗာပေါ်တွင် ဖောင့်ဖိုင် ({user_font}) ကို ရှာမတွေ့ပါ။ fonts ဖိုင်တွဲကို စစ်ဆေးပါ။")
-                create_text_image(logo_text, font_path_to_use, text_img_path, int(out_h * l_size * 0.3))
-                inputs.extend(["-i", str(text_img_path)])
-                next_v = "vlogo"
-                graph += f";[{current_v}][{inputs.count('-i') - 1}:v]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
-                current_v = next_v
+                if font_path_to_use and font_path_to_use.exists():
+                    create_text_image(logo_text, font_path_to_use, text_img_path, int(out_h * l_size * 0.3))
+                    inputs.extend(["-i", str(text_img_path)])
+                    next_v = "vlogo"
+                    graph += f";[{current_v}][{inputs.count('-i') - 1}:v]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
+                    current_v = next_v
 
+        # Subtitles (Using the internal total duration to sync timing before global speed up)
         if settings.get("subtitles", True):
-            # အချိန်ညှိပြီးသား ဗီဒီယိုကြာချိန် (final_video_duration) အတိုင်း SRT ထုတ်ပါမည်
-            raw_tts_dur_new = get_audio_duration(raw_tts_path)
-            srt = str(settings.get("subtitle_srt") or make_srt(script_text, raw_tts_dur_new))
+            srt = str(settings.get("subtitle_srt") or make_srt(script_text, total_output_dur))
             ass_path = temp_dir / "sub.ass"
             ass_path.write_text(srt_to_ass(srt, settings, out_w, out_h, visible_rect, 1.0), encoding="utf-8", newline="\n")
             font_dir = temp_dir / "fonts"
@@ -1265,7 +1247,7 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             graph += f";[{current_v}]ass=filename='{str(ass_path).replace(':', r'\:')}':fontsdir='{str(font_dir).replace(':', r'\:')}'[{next_v}]"
             current_v = next_v
 
-        # --- Audio ပေါင်းစပ်ခြင်း ---
+        # Audio Mixing (Internal Assembly)
         a_filters = ["[1:a]aresample=44100,aformat=channel_layouts=stereo,atempo=1.0[tts]"]
         current_a_mix = "tts"
         
@@ -1273,17 +1255,39 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         if bool(bgm_path_str) and Path(str(bgm_path_str)).exists():
             inputs.extend(["-stream_loop", "-1", "-i", str(bgm_path_str)])
             a_filters.append(f"[{inputs.count('-i') - 1}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(settings.get('music_volume', 24)) / 100.0},atempo=1.0[bgm_a]")
-            a_filters.append(f"[{current_a_mix}][bgm_a]amix=inputs=2:duration=longest:dropout_transition=2[amixed];[amixed]volume=2.0[a]")
+            a_filters.append(f"[{current_a_mix}][bgm_a]amix=inputs=2:duration=longest:dropout_transition=2[amixed];[amixed]volume=2.0[a_internal]")
         else:
-            a_filters.append(f"[{current_a_mix}]volume=1.0[a]")
+            a_filters.append(f"[{current_a_mix}]volume=1.0[a_internal]")
             
+        # --- အဆင့် (၅): Global Speed-Up ---
+        # Target duration: Original Video Duration + 3 seconds buffer (or 1.0 if not needed)
+        target_dur = vid_dur + 3.0
+        global_speed_factor = total_output_dur / target_dur
+        
+        # Ensure we only speed up, not slow down globally, and cap speed up at reasonable rate
+        global_speed_factor = max(1.0, min(1.5, global_speed_factor))
+        final_dur = total_output_dur / global_speed_factor
+        
+        if global_speed_factor > 1.0:
+            v_pts = 1.0 / global_speed_factor
+            graph += f";[{current_v}]setpts={v_pts:.4f}*PTS[v_final]"
+            current_v = "v_final"
+            
+            a_filters.append(f"[a_internal]atempo={global_speed_factor:.4f}[a_final]")
+            current_a_mix = "a_final"
+        else:
+            graph += f";[{current_v}]copy[v_final]"
+            current_v = "v_final"
+            a_filters.append(f"[a_internal]anull[a_final]")
+            current_a_mix = "a_final"
+
         graph += ";" + ";".join(a_filters)
 
         cmd = inputs + [
             "-filter_complex", graph, 
-            "-map", f"[{current_v}]", "-map", "[a]", 
+            "-map", f"[{current_v}]", "-map", f"[{current_a_mix}]", 
             "-c:v", "libx264", "-preset", "faster", "-crf", "26", "-pix_fmt", "yuv420p", "-r", "30",
-            "-c:a", "aac", "-b:a", "128k", "-t", f"{final_video_duration:.3f}", "-movflags", "+faststart", str(output_path)
+            "-c:a", "aac", "-b:a", "128k", "-t", f"{final_dur:.3f}", "-movflags", "+faststart", str(output_path)
         ]
         
         _run(cmd, timeout=2400)
