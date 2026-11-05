@@ -386,16 +386,16 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
             )
         elif recap_type in ["Raw to Recap", "Raw to reacp"]:
             instruction = hook_instruction + (
-                f"You are a Master Movie Recapper and Voice Director. Watch the visual frames AND listen to the audio carefully.\n"
-                f"Provide a 100% COMPLETE, highly detailed recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
+                f"You are an energetic Movie Recapper (ဇာတ်လမ်းပြန်လည်ပြောပြသူ). Watch the visual frames AND listen to the audio carefully.\n"
+                f"Provide a 100% COMPLETE, highly engaging recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
                 "CRITICAL RULES:\n"
-                "1. STRICT TAGGED TIMESTAMPS (CRITICAL): Every paragraph MUST begin with a specific tag and timestamp strictly inside SQUARE BRACKETS. You have TWO tag options:\n"
-                "   - For action, movement, or expressions WITHOUT dialogue, use: [ACTION | 00:00 - 00:05]\n"
-                "   - For scenes WITH character spoken dialogue, use: [DIALOGUE | 00:05 - 00:10]\n"
-                "   NEVER omit the brackets [ ] or the tags. Failure to use this exact format will crash the system!\n"
-                "2. CONTINUOUS TIMELINE (NO GAPS): You MUST cover the entire video from start to finish continuously. The end time of one timestamp MUST be the exact start time of the next timestamp (e.g., [ACTION | 00:00 - 00:10] MUST be followed by [DIALOGUE | 00:10 - 00:13]). Do not skip even a single second.\n"
-                "3. NARRATOR STYLE: Describe actions continuously like you are narrating an exciting movie to a friend.\n"
-                "4. 100% DIALOGUE COVERAGE: You MUST include EVERY SINGLE spoken dialogue in the [DIALOGUE] tagged sections.\n"
+                "1. STRICT TAGGED TIMESTAMPS: Every paragraph MUST begin EXACTLY with a tag and timestamp inside SQUARE BRACKETS. Options:\n"
+                "   - For action/movement: [ACTION | 00:00 - 00:05]\n"
+                "   - For dialogue: [DIALOGUE | 00:05 - 00:10]\n"
+                "   CRITICAL FORMATTING: DO NOT use bullet points (*, -), numbers (1., 2.), or bold text (**). Start every single paragraph DIRECTLY with the '[' character.\n"
+                "2. CONTINUOUS TIMELINE: Cover the entire video from start to finish continuously without skipping any seconds.\n"
+                "3. RECAPPER PERSONA: You are an OUTSIDE NARRATOR (အပြင်လူ) telling the story to the audience. DO NOT roleplay as the characters. When characters speak in the [DIALOGUE] sections, narrate what they are saying in the third person.\n"
+                "4. EXCITING STORYTELLING: Describe actions and weave the dialogues naturally like you are narrating an exciting movie to a friend.\n"
                 "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Use completely natural everyday Myanmar conversational tone.\n"
                 "6. Return ONLY the spoken text with exact tagged timestamps inside [ ]."
             )
@@ -1052,7 +1052,11 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         script_segments = []
         
         for line in script_text.splitlines():
-            m = re.match(pattern, line.strip(), re.IGNORECASE)
+            # ရှေ့ကပါလာတတ်တဲ့ အမှိုက်စာလုံးများ (ဥပမာ * , - , 1. , Space) ကို အရင်ရှင်းထုတ်မည်
+            clean_line = re.sub(r'^[\*\-\d\.\s]+', '', line.strip())
+            
+            # ပြီးမှ re.match ဖြင့် စာကြောင်းအစကို အတိအကျ ပြန်စစ်မည်
+            m = re.match(pattern, clean_line, re.IGNORECASE)
             if m:
                 tag, s_str, e_str, text = m.groups()
                 text = clean_script_text(text)
