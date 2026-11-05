@@ -387,12 +387,13 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
         elif recap_type in ["Raw to Recap", "Raw to reacp"]:
             instruction = hook_instruction + (
                 f"You are an energetic Movie Recapper (ဇာတ်လမ်းပြန်လည်ပြောပြသူ). Watch the visual frames AND listen to the audio carefully.\n"
-                f"Provide a 100% COMPLETE, highly engaging recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
+                f"Provide a 100% COMPLETE, highly detailed recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
                 "CRITICAL RULES:\n"
-                "1. NO TIMESTAMPS: DO NOT write any timestamps or tags like [ACTION] or [DIALOGUE]. Just write the pure spoken narrative continuously from start to finish.\n"
-                "2. RECAPPER PERSONA: You are an OUTSIDE NARRATOR (အပြင်လူ) telling the story to the audience. DO NOT roleplay as the characters. When characters speak, narrate what they are saying in the third person.\n"
-                "3. EXCITING STORYTELLING: Describe actions and weave the dialogues naturally like you are narrating an exciting movie to a friend.\n"
-                "4. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Use completely natural everyday Myanmar conversational tone."
+                "1. NO TIMESTAMPS OR TAGS: DO NOT write any timestamps, numbers, or tags like [ACTION] or [DIALOGUE]. Just write the pure spoken narrative as a continuous story.\n"
+                "2. 100% EXACT COVERAGE (CRITICAL): You MUST describe every single detailed action AND translate EVERY SINGLE spoken dialogue. DO NOT SUMMARIZE. If a character speaks in the audio, you MUST narrate exactly what they said.\n"
+                "3. RECAPPER PERSONA: You are an OUTSIDE NARRATOR (အပြင်လူ). DO NOT roleplay as the characters. When characters speak, weave their exact words into your third-person narration (e.g., 'မင်းသားက မင်းသမီးကို သူချစ်တယ်လို့ ပြောလိုက်ပါတယ်').\n"
+                "4. EXCITING STORYTELLING: Describe the detailed actions and exact dialogues naturally like you are narrating an exciting movie scene-by-scene to a friend.\n"
+                "5. 100% SPOKEN TONE: STRICTLY AVOID formal or bookish words. Use completely natural everyday Myanmar conversational tone (စကားပြောဟန်)."
             )
 
 
