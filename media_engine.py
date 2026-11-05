@@ -398,7 +398,11 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
 
 
         parts.append({"text": instruction})
-        res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=180)
+        
+        # Raw to Recap အတွက် ၁ မိနစ် (၆၀ စက္ကန့်) သာ အချိန်ပေးမည်။ အခြားအမျိုးအစားများအတွက် ၃ မိနစ် (၁၈၀ စက္ကန့်) ပေးမည်။
+        ai_timeout = 60 if recap_type in ["Raw to Recap", "Raw to reacp"] else 180
+        
+        res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=ai_timeout)
         text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
         if not text: raise RuntimeError("Script မပြန်လာပါ။")
         return text.strip()
