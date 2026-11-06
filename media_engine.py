@@ -398,15 +398,55 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
             )
 
 
-        parts.append({"text": instruction})
-        
-        # Raw to Recap အတွက် ၁ မိနစ် (၆၀ စက္ကန့်) သာ အချိန်ပေးမည်။ အခြားအမျိုးအစားများအတွက် ၃ မိနစ် (၁၈၀ စက္ကန့်) ပေးမည်။
-        ai_timeout = 60 if recap_type in ["Raw to Recap", "Raw to reacp"] else 180
-        
-        res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=ai_timeout)
-        text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
-        if not text: raise RuntimeError("Script မပြန်လာပါ။")
-        return text.strip()
+        # =====================================================================
+        # 📌 ၄ မိနစ်ထက်ကျော်သော ဗီဒီယိုများကို ၃ မိနစ်စာ အပိုင်းလေးများ Auto ခွဲပို့မည် (Raw to Recap သီးသန့်)
+        # =====================================================================
+        if duration_seconds > 240 and recap_type in ["Raw to Recap", "Raw to reacp"]:
+            if progress: progress(55, "📝 AI မှ ဇာတ်ညွှန်းကို အပိုင်းလိုက် ရေးသားနေပါသည် (ခေတ္တစောင့်ပါ)...")
+            
+            chunk_duration = 180 # ၃ မိနစ်စာ (180 စက္ကန့်) စီ ပိုင်းမည်
+            total_chunks = math.ceil(duration_seconds / chunk_duration)
+            full_script = ""
+            
+            for i in range(total_chunks):
+                start_time = i * chunk_duration
+                end_time = min((i + 1) * chunk_duration, duration_seconds)
+                
+                # အပိုင်း (ဥပမာ 00:00 မှ 03:00) ကိုသာ အာရုံစိုက်ရန် AI ကို တင်းကျပ်စွာ ခိုင်းစေခြင်း
+                chunk_instruction = instruction + f"\n\n**CRITICAL: You are only narrating the segment from {int(start_time)//60:02d}:{int(start_time)%60:02d} to {int(end_time)//60:02d}:{int(end_time)%60:02d}. Do NOT narrate anything outside this time frame.**"
+                
+                if progress: progress(55 + int((i / total_chunks) * 20), f"📝 AI မှ ဇာတ်ညွှန်း ရေးသားနေပါသည် (အပိုင်း {i+1}/{total_chunks})...")
+                
+                chunk_parts = [{"fileData": {"fileUri": gemini_file["fileUri"], "mimeType": gemini_file["mimeType"]}}]
+                chunk_parts.append({"text": chunk_instruction})
+                
+                try:
+                    import time
+                    res = _generate_content(api_key, chunk_parts, config={"temperature": 0.3}, timeout=180)
+                    chunk_text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
+                    
+                    if chunk_text:
+                        if i > 0: # ဒုတိယပိုင်းမှစ၍ TITLE နှင့် COVER များကို ဖျက်မည်
+                            import re
+                            chunk_text = re.sub(r'^TITLE:.*$', '', chunk_text, flags=re.MULTILINE).strip()
+                            chunk_text = re.sub(r'^COVER:.*$', '', chunk_text, flags=re.MULTILINE).strip()
+                        
+                        full_script += chunk_text + "\n\n"
+                        time.sleep(2) # API Limit မဖြစ်အောင် ခဏစောင့်မည်
+                except Exception as e:
+                    print(f"Chunk {i+1} Generation Error: {e}")
+                    pass
+            
+            if not full_script.strip(): raise RuntimeError("Script မပြန်လာပါ။")
+            return full_script.strip()
+            
+        else:
+            # ၄ မိနစ်အောက် ဗီဒီယိုများအတွက် သာမန်အတိုင်း တစ်ခါတည်းပို့မည်
+            parts.append({"text": instruction})
+            res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=180)
+            text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
+            if not text: raise RuntimeError("Script မပြန်လာပါ။")
+            return text.strip()
 
     finally:
         if gemini_file and gemini_file.get("name"):
@@ -1048,18 +1088,15 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         if tts_dur <= 0: tts_dur = vid_dur
 
         # =======================================================
-        # 📌 အစ်ကိုရွေးချယ်သော နံပါတ် (၁) နည်းလမ်း
         # Video ကို 0.99 သာနှေးမည်၊ Audio ကို Video နှင့်ကွက်တိဖြစ်အောင် ဆွဲမြန်မည်
         # =======================================================
         video_slow_factor = 0.99
         target_vid_dur = vid_dur / video_slow_factor
-        
-        # အသံကို ဗီဒီယိုအရှည်နှင့် ကိုက်ညီအောင် မြန်နှုန်းတွက်ချက်ခြင်း
         audio_speed = tts_dur / target_vid_dur
         
         inputs = ["ffmpeg", "-y", "-i", str(video_path), "-i", str(raw_tts_path)]
         
-        # --- Video Filter (Visuals) ---
+        # --- Video Filter (Visuals & Aspect Ratio) ---
         aesthetic_filters = [f"setpts={1.0/video_slow_factor:.5f}*PTS-STARTPTS", "fps=30"]
         if settings.get("mirror"): aesthetic_filters.append("hflip")
         if settings.get("zoom_enabled"): aesthetic_filters.append("crop=iw*0.96:ih*0.96")
@@ -1077,6 +1114,71 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
         graph = f"[0:v]{','.join(aesthetic_filters)}[v0]"
         current_v = "v0"
 
+        # --- Custom Blurs (အစ်ကိုပြောသော Blur အပိုင်း) ---
+        if settings.get("blur_enabled"):
+            raw_b = int(settings.get("blur_strength", 10))
+            luma_r, chroma_r = max(1, min(20, raw_b)), max(1, min(14, raw_b // 2 if raw_b > 2 else 1))
+            for idx, mask in enumerate(settings.get("blur_masks", [])):
+                vx, vy, vw, vh = visible_rect["x"], visible_rect["y"], visible_rect["width"], visible_rect["height"]
+                bx, by = max(1, vx + int(float(mask["x"]) * vw)), max(1, vy + int(float(mask["y"]) * vh))
+                bw, bh = max(1, min(int(float(mask["width"]) * vw), out_w - bx - 1)), max(1, min(int(float(mask["height"]) * vh), out_h - by - 1))
+                next_v = f"blur{idx}"
+                graph += f";[{current_v}]split=2[bg{idx}][toblur{idx}];[toblur{idx}]crop={bw}:{bh}:{bx}:{by},boxblur={luma_r}:{chroma_r}[blurred{idx}];[bg{idx}][blurred{idx}]overlay={bx}:{by}[{next_v}]"
+                current_v = next_v
+
+        # --- Logos (Watermark / Text Logo အပိုင်း) ---
+        if settings.get("logo_type") == "moving":
+            import time
+            user_font = str(settings.get("logo_font", "Beloved Bunny"))
+            target_font_path = FONT_FILES.get(user_font)
+            if not target_font_path or not target_font_path.exists():
+                target_font_path = FONT_FILES.get("Noto Sans Myanmar")
+            try: safe_font = temp_dir / f"safe_font_{int(time.time() * 1000)}.ttf"
+            except: safe_font = Path(tempfile.gettempdir()) / f"safe_font_{int(time.time() * 1000)}.ttf"
+            if target_font_path: shutil.copy2(target_font_path, safe_font)
+            font_path = str(safe_font).replace('\\', '/').replace(':', r'\:')
+            run_text = str(settings.get("logo_text", "")).strip() or "Test Logo"
+            safe_text = run_text.replace("'", "\u2019").replace(":", r"\:")
+            next_v = "vtestlogo"
+            graph += f";[{current_v}]drawtext=fontfile='{font_path}':text='{safe_text}':x='abs(w-tw-abs(mod(t*150,max(1,(w-tw)*2))-(w-tw)))':y='abs(h-th-abs(mod(t*100,max(1,(h-th)*2))-(h-th)))':fontsize=h*0.05:fontcolor=white:shadowcolor=black:shadowx=2:shadowy=2[{next_v}]"
+            current_v = next_v
+
+        elif settings.get("logo_type", "static") == "static":
+            logo_str = settings.get("logo_path") or settings.get("watermark_path")
+            logo_text = str(settings.get("logo_text", "")).strip()
+            lx_pct, ly_pct = max(0, min(100, int(settings.get("logo_x", 84)))) / 100.0, max(0, min(100, int(settings.get("logo_y", 86)))) / 100.0
+            l_size = max(10, min(100, int(settings.get("logo_size", 22)))) / 100.0
+            target_w = int(out_w * l_size)
+
+            if logo_str and Path(str(logo_str)).exists():
+                inputs.extend(["-i", str(logo_str)])
+                next_v = "vlogo"
+                graph += f";[{inputs.count('-i') - 1}:v]scale={target_w}:-1[wm];[{current_v}][wm]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
+                current_v = next_v
+            elif logo_text:
+                text_img_path = temp_dir / "logo.png"
+                user_font = str(settings.get("logo_font", "Beloved Bunny"))
+                font_path_to_use = FONT_FILES.get(user_font)
+                if not font_path_to_use or not font_path_to_use.exists():
+                    font_path_to_use = FONT_FILES.get("Noto Sans Myanmar")
+                create_text_image(logo_text, font_path_to_use, text_img_path, int(out_h * l_size * 0.3))
+                inputs.extend(["-i", str(text_img_path)])
+                next_v = "vlogo"
+                graph += f";[{current_v}][{inputs.count('-i') - 1}:v]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
+                current_v = next_v
+
+        # --- Subtitles (စာတန်းထိုး အပိုင်း) ---
+        if settings.get("subtitles", True):
+            srt = str(settings.get("subtitle_srt") or make_srt(str(settings.get("script", "")), tts_dur))
+            ass_path = temp_dir / "sub.ass"
+            ass_path.write_text(srt_to_ass(srt, settings, out_w, out_h, visible_rect, audio_speed), encoding="utf-8", newline="\n")
+            font_dir = temp_dir / "fonts"
+            font_dir.mkdir(exist_ok=True)
+            shutil.copy2(FONT_FILES.get(str(settings.get("subtitle_font")), FONT_FILES["Noto Sans Myanmar"]), font_dir)
+            next_v = "vsub"
+            graph += f";[{current_v}]ass=filename='{str(ass_path).replace(':', r'\:')}':fontsdir='{str(font_dir).replace(':', r'\:')}'[{next_v}]"
+            current_v = next_v
+
         # --- Audio Filter (အသံဆွဲမြန်ခြင်း) ---
         a_filters = ["[1:a]aresample=44100,aformat=channel_layouts=stereo[a_base]"]
         
@@ -1092,24 +1194,23 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, An
             t_filters.append(f"atempo={t_rem:.4f}")
             
         if t_filters:
-            a_filters.append(f"[a_base]{','.join(t_filters)}[a_final]")
+            a_filters.append(f"[a_base]{','.join(t_filters)}[a_tts]")
         else:
-            a_filters.append("[a_base]volume=1.0[a_final]")
+            a_filters.append("[a_base]volume=1.0[a_tts]")
+            
+        current_a = "a_tts"
+
+        # --- Music (နောက်ခံသီချင်း BGM ထည့်သွင်းခြင်း) ---
+        bgm_path_str = settings.get("music_path")
+        if bool(bgm_path_str) and Path(str(bgm_path_str)).exists():
+            inputs.extend(["-stream_loop", "-1", "-i", str(bgm_path_str)])
+            bgm_idx = inputs.count("-i") - 1
+            a_filters.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(settings.get('music_volume', 24)) / 100.0}[bgm_a]")
+            a_filters.append(f"[{current_a}][bgm_a]amix=inputs=2:duration=longest:dropout_transition=2[amixed];[amixed]volume=2.0[a_final]")
+        else:
+            a_filters.append(f"[{current_a}]volume=1.0[a_final]")
 
         graph += ";" + ";".join(a_filters)
-
-        # --- Subtitles တွက်ချက်ခြင်း ---
-        if settings.get("subtitles", True):
-            # အသံကို ဆွဲမြန်ထားသည့်အတွက် Subtitle ကိုလည်း audio_speed အတိုင်း မြန်ပေးရမည်
-            srt = str(settings.get("subtitle_srt") or make_srt(str(settings.get("script", "")), tts_dur))
-            ass_path = temp_dir / "sub.ass"
-            ass_path.write_text(srt_to_ass(srt, settings, out_w, out_h, visible_rect, audio_speed), encoding="utf-8", newline="\n")
-            font_dir = temp_dir / "fonts"
-            font_dir.mkdir(exist_ok=True)
-            shutil.copy2(FONT_FILES.get(str(settings.get("subtitle_font")), FONT_FILES["Noto Sans Myanmar"]), font_dir)
-            next_v = "vsub"
-            graph += f";[{current_v}]ass=filename='{str(ass_path).replace(':', r'\:')}':fontsdir='{str(font_dir).replace(':', r'\:')}'[{next_v}]"
-            current_v = next_v
 
         # --- Final Render ---
         cmd = inputs + [
@@ -1394,7 +1495,7 @@ def render_final(video_path: Path, tts_wav: bytes, settings: dict[str, Any], out
         video_filters.append("eq=brightness=0.06:saturation=1.2:contrast=1.05")
     video_filters.append("unsharp=5:5:0.8:3:3:0.4")
     if settings.get("video_bg_blur"):
-        video_filters.append(f"split=2[bg][fg];[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:10[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
+        video_filters.append(f"split=2[bg][fg];[bg]crop=iw/2:ih/2,scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:2[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
     else:
         video_filters.extend([f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos", f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"])
     
