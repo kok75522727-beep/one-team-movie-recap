@@ -394,7 +394,7 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                 settings["speed"] = 1.0
                 settings["voiceSpeed"] = 1.0
 
-        if settings.get("recapType", "") == "Movie Subtitle":
+            if settings.get("recapType", "") == "Movie Subtitle":
                 update_progress(65, "စာတန်းထိုးအတွက်ဖြစ်၍ မြန်မာအသံ မထုတ်ပါ")
                 tts_wav = b""
             elif settings.get("recapType", "") in ["Raw to Recap", "Raw to reacp"]:
