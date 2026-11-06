@@ -394,9 +394,44 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                 settings["speed"] = 1.0
                 settings["voiceSpeed"] = 1.0
 
-            if settings.get("recapType", "") == "Movie Subtitle":
+        if settings.get("recapType", "") == "Movie Subtitle":
                 update_progress(65, "စာတန်းထိုးအတွက်ဖြစ်၍ မြန်မာအသံ မထုတ်ပါ")
                 tts_wav = b""
+            elif settings.get("recapType", "") in ["Raw to Recap", "Raw to reacp"]:
+                update_progress(65, "🎬 အသံများကို အပိုင်းလိုက်ဖြတ်၍ တိကျစွာ ထုတ်လုပ်နေပါသည် (API ကြောင့် အနည်းငယ် ကြာနိုင်ပါသည်)")
+                import re, time
+                pattern = r'\[\s*(?:(?:ACTION|DIALOGUE)\s*\|\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\s*\]\s*(.*)'
+                script_text = settings.get("script", "")
+                audio_chunks = []
+                
+                for line in script_text.splitlines():
+                    m = re.match(pattern, line.strip(), re.IGNORECASE)
+                    if m:
+                        s_str, e_str, raw_text = m.groups()
+                        clean_text = media_engine.clean_script_text(raw_text)
+                        if not clean_text: continue
+                        
+                        def parse_sec(t_str):
+                            if not t_str: return 0.0
+                            p = t_str.split(':')
+                            if len(p) >= 3: return int(p[0])*3600 + int(p[1])*60 + int(p[2])
+                            return int(p[0])*60 + int(p[1])
+                            
+                        st = parse_sec(s_str)
+                        time.sleep(0.5) # API Rate Limit မဖြစ်အောင် 0.5 စက္ကန့် စောင့်ပေးမည်
+                        
+                        try:
+                            if voice_choice in media_engine.GEMINI_VOICES:
+                                chunk_wav = media_engine.generate_gemini_tts(clean_text, voice_choice, api_key)
+                            else:
+                                chunk_wav = media_engine.generate_microsoft_tts(clean_text, voice_choice, speed_factor=1.0)
+                            audio_chunks.append({"start": st, "text": clean_text, "audio_bytes": chunk_wav})
+                        except Exception as e:
+                            print(f"Chunk TTS Error: {e}")
+                            pass
+                            
+                settings["audio_chunks"] = audio_chunks
+                tts_wav = b"" # Raw to Recap အတွက် အသံအရှည်ကြီး မသုံးတော့ပါ
             else:
                 update_progress(65, "အသံ ဖိုင် ထုတ်ယူနေပါသည်")
                 tts_wav = media_engine.generate_gemini_tts(script, voice_choice, api_key) if voice_choice in media_engine.GEMINI_VOICES else media_engine.generate_microsoft_tts(script, voice_choice, speed_factor=float(settings.get("speed", 1.0)))

@@ -1028,8 +1028,8 @@ def render_true_movie_dub(video_path: Path, tts_wav: bytes, settings: dict[str, 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict, output_path: Path) -> Path:
-    import tempfile, shutil, re
+def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict[str, Any], output_path: Path) -> Path:
+    import tempfile, shutil
     from pathlib import Path
     
     source = probe_video(video_path)
@@ -1037,114 +1037,169 @@ def render_raw_to_recap(video_path: Path, tts_wav: bytes, settings: dict, output
     scale = 854
     out_w, out_h = (round(scale * 16 / 9), scale) if aspect == "16:9" else (scale, scale) if aspect == "1:1" else (scale, round(scale * 16 / 9))
     out_w -= out_w % 2; out_h -= out_h % 2
+    visible_rect = fitted_source_rect(source, out_w, out_h)
     
     temp_dir = Path(tempfile.mkdtemp(prefix="raw_recap_"))
-    raw_tts_path = temp_dir / "full_tts.mp3"
-    raw_tts_path.write_bytes(tts_wav)
-    
-    inputs = ["ffmpeg", "-y", "-i", str(video_path), "-i", str(raw_tts_path)]
+    inputs = ["ffmpeg", "-y", "-i", str(video_path)]
     
     try:
-        script_text = str(settings.get("script", ""))
         vid_dur = float(source["duration"])
-        tts_dur = get_audio_duration(raw_tts_path)
+        audio_chunks = settings.get("audio_chunks", [])
         
-        # =======================================================
-        # 📌 အဆင့် (၁): AI Script မှ အချိန်မှတ်များ ဖတ်ခြင်း
-        # =======================================================
-        pattern = r'\[.*?(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})\](.*?)(?=\[|$)'
-        matches = re.findall(pattern, script_text, re.DOTALL)
+        if not audio_chunks:
+            raise RuntimeError("❌ Error: ဇာတ်ညွှန်းထဲတွင် အချိန်မှတ်များ [00:00 - 00:05] အတိအကျ မပါဝင်ပါ။")
+            
+        total_audio_dur = 0.0
         
-        chunks = []
-        total_chars = 0
-        for start_str, end_str, text in matches:
-            def time_to_sec(t_str):
-                m, s = map(int, t_str.split(':'))
-                return m * 60 + s
-            
-            st = time_to_sec(start_str)
-            en = time_to_sec(end_str)
-            clean_text = text.strip()
-            # စာလုံးရေကို ရေတွက်ခြင်း (အသံဖြတ်မည့် ကြာချိန်ကို တွက်ရန်)
-            chars = len(re.sub(r'\s+', '', clean_text)) 
-            
-            if chars > 0 and en > st:
-                chunks.append({"start": st, "end": en, "chars": chars})
-                total_chars += chars
+        for i, chunk in enumerate(audio_chunks):
+            chunk_path = temp_dir / f"chunk_{i}.mp3"
+            chunk_path.write_bytes(chunk["audio_bytes"])
+            inputs.extend(["-i", str(chunk_path)])
+            chunk["dur"] = get_audio_duration(chunk_path)
+            total_audio_dur += chunk["dur"]
 
         # =======================================================
-        # 📌 အဆင့် (၂): Video ကို တပြေးညီဆွဲနှေးမည့် အချိုး (Stretch Factor) တွက်ခြင်း
+        # 📌 အဆင့် (၁): Video ကို တပြေးညီဆွဲနှေးမည့် အချိုး (Stretch Factor)
         # =======================================================
-        stretch_factor = 1.0
-        if chunks and total_chars > 0:
-            for c in chunks:
-                c["v_dur"] = c["end"] - c["start"]
-                c["a_dur"] = (c["chars"] / total_chars) * tts_dur # စာလုံးရေအချိုးအရ အသံကြာချိန်ကို ခန့်မှန်းခြင်း
-                
-                # အသံအပိုင်းလေးများ တစ်ခုနှင့်တစ်ခု ထပ်မသွားစေရန် အကြီးဆုံးအချိုးကို ယူပါမည်
-                factor = c["a_dur"] / c["v_dur"] if c["v_dur"] > 0 else 1.0
-                if factor > stretch_factor:
-                    stretch_factor = factor
-        else:
-            stretch_factor = max(1.0, tts_dur / vid_dur) if vid_dur > 0 else 1.0
-
-        # =======================================================
-        # 📌 အဆင့် (၃): Speed ကို ခဏဖြုတ်ထားခြင်း (စမ်းသပ်ရန်)
-        # =======================================================
-        speed_float = 1.0 # (1.5x Speed ကို ခဏဖြုတ်ထားပါသည်။ ကောင်း/မကောင်း သိရအောင်ပါ)
+        stretch_factor = max(1.0, total_audio_dur / vid_dur) if vid_dur > 0 else 1.0
+        speed_float = 1.0 # 1.5x Speed ကို ခဏဖြုတ်ထားပါသည် (Normal Speed)
         v_sync_factor = stretch_factor / speed_float
         
-        final_video_duration = (vid_dur * stretch_factor) / speed_float
-
-        # --- Video Filter (တပြေးညီ ဆွဲနှေးခြင်း) ---
-        v_filters = [f"setpts={v_sync_factor:.5f}*PTS-STARTPTS", "fps=30"]
-        if settings.get("mirror"): v_filters.append("hflip")
+        # --- Video Filter (Visuals) ---
+        aesthetic_filters = [f"setpts={v_sync_factor:.5f}*PTS-STARTPTS", "fps=30"]
+        if settings.get("mirror"): aesthetic_filters.append("hflip")
+        if settings.get("zoom_enabled"): aesthetic_filters.append("crop=iw*0.96:ih*0.96")
+        
+        v_filter = settings.get("video_filter", "None")
+        if v_filter == "HD Cam 2": aesthetic_filters.append("eq=brightness=0.02:saturation=1.1:contrast=1.15:gamma=0.95")
+        elif v_filter == "Glow": aesthetic_filters.append("eq=brightness=0.06:saturation=1.2:contrast=1.05")
+        aesthetic_filters.append("unsharp=5:5:0.8:3:3:0.4")
         
         if settings.get("video_bg_blur"):
-            v_filters.append(f"split=2[bg][fg];[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:10[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
+            aesthetic_filters.append(f"split=2[bg][fg];[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:10[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
         else:
-            v_filters.extend([f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos", f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"])
+            aesthetic_filters.extend([f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos", f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"])
             
-        graph = f"[0:v]{','.join(v_filters)}[v_final];"
+        graph = f"[0:v]{','.join(aesthetic_filters)}[v0]"
+        current_v = "v0"
 
-        # --- Audio Filter (အသံကို ဖြတ်၍ နေရာမှန်တွင် ကပ်ခြင်း) ---
+        # --- Blurs ---
+        if settings.get("blur_enabled"):
+            raw_b = int(settings.get("blur_strength", 10))
+            luma_r, chroma_r = max(1, min(20, raw_b)), max(1, min(14, raw_b // 2 if raw_b > 2 else 1))
+            for idx, mask in enumerate(settings.get("blur_masks", [])):
+                vx, vy, vw, vh = visible_rect["x"], visible_rect["y"], visible_rect["width"], visible_rect["height"]
+                bx, by = max(1, vx + int(float(mask["x"]) * vw)), max(1, vy + int(float(mask["y"]) * vh))
+                bw, bh = max(1, min(int(float(mask["width"]) * vw), out_w - bx - 1)), max(1, min(int(float(mask["height"]) * vh), out_h - by - 1))
+                next_v = f"blur{idx}"
+                graph += f";[{current_v}]split=2[bg{idx}][toblur{idx}];[toblur{idx}]crop={bw}:{bh}:{bx}:{by},boxblur={luma_r}:{chroma_r}[blurred{idx}];[bg{idx}][blurred{idx}]overlay={bx}:{by}[{next_v}]"
+                current_v = next_v
+
+        # --- Logos ---
+        if settings.get("logo_type") == "moving":
+            import time
+            user_font = str(settings.get("logo_font", "Beloved Bunny"))
+            target_font_path = FONT_FILES.get(user_font)
+            if not target_font_path or not target_font_path.exists():
+                raise RuntimeError(f"❌ Error: ဆာဗာပေါ်တွင် ဖောင့်ဖိုင် ({user_font}) ကို ရှာမတွေ့ပါ။")
+            try: safe_font = temp_dir / f"safe_font_{int(time.time() * 1000)}.ttf"
+            except: safe_font = Path(tempfile.gettempdir()) / f"safe_font_{int(time.time() * 1000)}.ttf"
+            shutil.copy2(target_font_path, safe_font)
+            font_path = str(safe_font).replace('\\', '/').replace(':', r'\:')
+            run_text = str(settings.get("logo_text", "")).strip() or "Test Logo"
+            safe_text = run_text.replace("'", "\u2019").replace(":", r"\:")
+            next_v = "vtestlogo"
+            graph += f";[{current_v}]drawtext=fontfile='{font_path}':text='{safe_text}':x='abs(w-tw-abs(mod(t*150,max(1,(w-tw)*2))-(w-tw)))':y='abs(h-th-abs(mod(t*100,max(1,(h-th)*2))-(h-th)))':fontsize=h*0.05:fontcolor=white:shadowcolor=black:shadowx=2:shadowy=2[{next_v}]"
+            current_v = next_v
+
+        elif settings.get("logo_type", "static") == "static":
+            logo_str = settings.get("logo_path") or settings.get("watermark_path")
+            logo_text = str(settings.get("logo_text", "")).strip()
+            lx_pct, ly_pct = max(0, min(100, int(settings.get("logo_x", 84)))) / 100.0, max(0, min(100, int(settings.get("logo_y", 86)))) / 100.0
+            l_size = max(10, min(100, int(settings.get("logo_size", 22)))) / 100.0
+            target_w = int(out_w * l_size)
+
+            if logo_str and Path(str(logo_str)).exists():
+                inputs.extend(["-i", str(logo_str)])
+                next_v = "vlogo"
+                graph += f";[{inputs.count('-i') - 1}:v]scale={target_w}:-1[wm];[{current_v}][wm]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
+                current_v = next_v
+            elif logo_text:
+                text_img_path = temp_dir / "logo.png"
+                user_font = str(settings.get("logo_font", "Beloved Bunny"))
+                font_path_to_use = FONT_FILES.get(user_font)
+                if not font_path_to_use or not font_path_to_use.exists():
+                    raise RuntimeError(f"❌ Error: ဆာဗာပေါ်တွင် ဖောင့်ဖိုင် ({user_font}) ကို ရှာမတွေ့ပါ။")
+                create_text_image(logo_text, font_path_to_use, text_img_path, int(out_h * l_size * 0.3))
+                inputs.extend(["-i", str(text_img_path)])
+                next_v = "vlogo"
+                graph += f";[{current_v}][{inputs.count('-i') - 1}:v]overlay=W*{lx_pct}-w/2:H*{ly_pct}-h/2[{next_v}]"
+                current_v = next_v
+
+        # --- Subtitles ---
+        if settings.get("subtitles", True):
+            def clock(ms): return f"{int(ms) // 3600000:02d}:{(int(ms) // 60000) % 60:02d}:{(int(ms) // 1000) % 60:02d},{int(ms) % 1000:03d}"
+            srt_lines = []
+            current_ms = 0
+            for i, chunk in enumerate(audio_chunks):
+                mapped_start_ms = (chunk["start"] * stretch_factor / speed_float) * 1000
+                actual_start_ms = max(mapped_start_ms, current_ms)
+                dur_ms = chunk["dur"] * 1000
+                end_ms = actual_start_ms + dur_ms
+                adjusted_end = end_ms - 50 if dur_ms > 200 else end_ms
+                srt_lines.append(f"{i+1}\n{clock(actual_start_ms)} --> {clock(adjusted_end)}\n{chunk['text']}")
+                current_ms = end_ms
+                
+            srt = "\n\n".join(srt_lines)
+            ass_path = temp_dir / "sub.ass"
+            ass_path.write_text(srt_to_ass(srt, settings, out_w, out_h, visible_rect, 1.0), encoding="utf-8", newline="\n")
+            font_dir = temp_dir / "fonts"
+            font_dir.mkdir(exist_ok=True)
+            shutil.copy2(FONT_FILES.get(str(settings.get("subtitle_font")), FONT_FILES["Noto Sans Myanmar"]), font_dir)
+            next_v = "vsub"
+            graph += f";[{current_v}]ass=filename='{str(ass_path).replace(':', r'\:')}':fontsdir='{str(font_dir).replace(':', r'\:')}'[{next_v}]"
+            current_v = next_v
+
+        # --- Audio Filter (အချိန်မှတ်အတိုင်း ကွက်တိချခြင်း) ---
         a_filters = []
         concat_elements = []
-        
-        current_audio_pos = 0.0
         last_end_time = 0.0
         
-        if chunks and total_chars > 0:
-            for i, c in enumerate(chunks):
-                dur_trim = c["a_dur"]
-                # ဗီဒီယိုကို ဆွဲနှေးထားသည့်အတွက် အသံနေရာချမည့်အချိန်ကိုပါ Stretch Factor ဖြင့် မြှောက်ပေးရပါမည်
-                mapped_start = (c["start"] * stretch_factor) / speed_float 
-                
-                # ၁။ နေရာမှန်ရောက်ရန် ကြားထဲတွင် အသံတိတ် (Silence) ခံခြင်း
-                silence_dur = mapped_start - last_end_time
-                if silence_dur > 0.05: # ၀.၀၅ စက္ကန့်ထက် ကြီးမှသာ အသံတိတ်ထည့်မည်
-                    a_filters.append(f"anullsrc=r=44100:cl=stereo:d={silence_dur:.3f}[sil{i}]")
-                    concat_elements.append(f"[sil{i}]")
-                
-                # ၂။ အသံ (TTS) ကို အတိအကျ ဖြတ်ယူခြင်း
-                a_filters.append(f"[1:a]atrim=start={current_audio_pos:.3f}:duration={dur_trim:.3f},asetpts=PTS-STARTPTS,aresample=44100,aformat=channel_layouts=stereo[a{i}]")
-                concat_elements.append(f"[a{i}]")
-                
-                current_audio_pos += dur_trim
-                last_end_time = mapped_start + dur_trim
+        for i, chunk in enumerate(audio_chunks):
+            mapped_start = (chunk["start"] * stretch_factor) / speed_float 
+            actual_start = max(mapped_start, last_end_time)
             
-            concat_str = "".join(concat_elements)
-            a_filters.append(f"{concat_str}concat=n={len(concat_elements)}:v=0:a=1[a_final]")
+            silence_dur = actual_start - last_end_time
+            if silence_dur > 0.05: 
+                a_filters.append(f"anullsrc=r=44100:cl=stereo:d={silence_dur:.3f}[sil{i}]")
+                concat_elements.append(f"[sil{i}]")
+            
+            audio_input_idx = i + 1
+            a_filters.append(f"[{audio_input_idx}:a]aresample=44100,aformat=channel_layouts=stereo[a{i}]")
+            concat_elements.append(f"[a{i}]")
+            last_end_time = actual_start + chunk["dur"]
+        
+        concat_str = "".join(concat_elements)
+        a_filters.append(f"{concat_str}concat=n={len(concat_elements)}:v=0:a=1[a_concat]")
+        current_a_mix = "a_concat"
+        
+        # --- Music (BGM) ထည့်သွင်းခြင်း ---
+        bgm_path_str = settings.get("music_path")
+        if bool(bgm_path_str) and Path(str(bgm_path_str)).exists():
+            inputs.extend(["-stream_loop", "-1", "-i", str(bgm_path_str)])
+            bgm_idx = inputs.count('-i') - 1
+            a_filters.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(settings.get('music_volume', 24)) / 100.0}[bgm_a]")
+            a_filters.append(f"[{current_a_mix}][bgm_a]amix=inputs=2:duration=longest:dropout_transition=2[amixed];[amixed]volume=2.0[a_final]")
         else:
-            # အချိန်မှတ် မပါခဲ့လျှင် မူလအသံအတိုင်းသာ သုံးမည်
-            a_filters.append("[1:a]aresample=44100,aformat=channel_layouts=stereo[a_final]")
+            a_filters.append(f"[{current_a_mix}]volume=1.0[a_final]")
             
-        graph += ";".join(a_filters)
+        final_video_duration = max((vid_dur * stretch_factor) / speed_float, last_end_time)
+        graph += ";" + ";".join(a_filters)
 
         # --- Final Render ---
         cmd = inputs + [
             "-filter_complex", graph, 
-            "-map", "[v_final]", "-map", "[a_final]", 
+            "-map", f"[{current_v}]", "-map", "[a_final]", 
             "-c:v", "libx264", "-preset", "faster", "-crf", "26", "-pix_fmt", "yuv420p", "-r", "30",
             "-c:a", "aac", "-b:a", "128k", "-t", f"{final_video_duration:.3f}", "-movflags", "+faststart", str(output_path)
         ]
