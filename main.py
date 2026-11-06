@@ -400,12 +400,19 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             elif settings.get("recapType", "") in ["Raw to Recap", "Raw to reacp"]:
                 update_progress(65, "🎬 အသံများကို အပိုင်းလိုက်ဖြတ်၍ တိကျစွာ ထုတ်လုပ်နေပါသည် (API ကြောင့် အနည်းငယ် ကြာနိုင်ပါသည်)")
                 import re, time
-                pattern = r'\[\s*(?:(?:ACTION|DIALOGUE)\s*\|\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\s*\]\s*(.*)'
+                
+                # 📌 AI ရေးပုံ ပြောင်းလဲမှုများကို အမှားခံနိုင်သော Flexible Regex သစ်
+                pattern = r'\[.*?(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?.*?\]\s*(.*)'
                 script_text = settings.get("script", "")
                 audio_chunks = []
                 
                 for line in script_text.splitlines():
-                    m = re.match(pattern, line.strip(), re.IGNORECASE)
+                    line = line.strip()
+                    # AI မှ ရှေ့ဆုံးတွင် ** သို့မဟုတ် - များ ထည့်ရေးထားပါက အရင်ရှင်းလင်းမည်
+                    line = re.sub(r'^[\*\-\s]+', '', line)
+                    
+                    # re.match အစား နေရာမရွေးရှာနိုင်သော re.search ကို သုံးမည်
+                    m = re.search(pattern, line, re.IGNORECASE)
                     if m:
                         s_str, e_str, raw_text = m.groups()
                         clean_text = media_engine.clean_script_text(raw_text)
