@@ -373,8 +373,6 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
     def task_worker():
         try:
             settings = payload.settings
-            
-            # ပြင်ဆင်ချက်: Speed မှန်ကန်စေရန် voiceSpeed ကို speed အဖြစ် ပြောင်းလဲသတ်မှတ်ခြင်း
             settings["speed"] = settings.get("voiceSpeed", settings.get("speed", 1.0))
             
             api_key = payload.simple_api_key or os.getenv("GEMINI_API_KEY", "")
@@ -382,23 +380,24 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             if not video_path.exists(): download_from_gcs(proj.get("gcs_path") or f"uploads/{proj.get('file_id', video_path.name)}", video_path)
 
             voice_choice = settings.get("voice", "Nilar")
+            recap_type = settings.get("recapType", settings.get("recap_type", "Movie Recap"))
+            
+            v_title = proj.get("filename", "video.mp4")
+            user_email = member.get("email", "").strip().lower()
+            user_name = member.get("user_metadata", {}).get("full_name") or user_email.split("@")[0]
+
             def update_progress(percent: int, msg: str):
                 update_job(job_id, {"progress": percent, "message": msg, "step": "render" if percent >= 80 else "voice" if percent >= 50 else "script" if percent >= 20 else "upload"})
                 db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={"progress": percent, "message": msg})
 
-            recap_type = settings.get("recapType", settings.get("recap_type", "Movie Recap"))
-
             # =================================================================================
-            # 🚀 SEQUENTIAL INDEPENDENT PROCESSING (Raw to Recap သီးသန့်: ၁၀ မိနစ်စာကို အပိုင်းခွဲ၍ အပြီးလုပ်မည်)
+            # 🚀 ၅ မိနစ်နှင့်အထက် ဗီဒီယိုများကို အပိုင်းခွဲ၍ တစ်ပိုင်းချင်းစီ အပြီးလုပ်ပြီး ပို့ပေးမည့်စနစ်
             # =================================================================================
-            if duration_seconds > 240 and recap_type in ["Raw to Recap", "Raw to reacp"]:
-                update_progress(10, "ဗီဒီယိုရှည်လွန်းသဖြင့် အပိုင်းလိုက် သီးသန့်ခွဲထုတ်နေပါသည်...")
+            if duration_seconds >= 300 and recap_type in ["Raw to Recap", "Raw to reacp"]:
+                update_progress(10, "ဗီဒီယို ၅ မိနစ်ကျော်သဖြင့် အပိုင်းလိုက် သီးသန့်ခွဲထုတ်နေပါသည်...")
                 import math, subprocess, re, time
-                chunk_duration = 180 # ၃ မိနစ်စာစီ အပိုင်းပိုင်းဖြတ်မည်
+                chunk_duration = 180
                 total_chunks = math.ceil(duration_seconds / chunk_duration)
-                
-                all_download_urls = []
-                final_dur = 0
                 
                 for i in range(total_chunks):
                     start_t = i * chunk_duration
@@ -406,11 +405,9 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     
                     update_progress(10 + int((i/total_chunks)*80), f"အပိုင်း {i+1}/{total_chunks} အား သီးသန့် ဖန်တီးနေပါသည်...")
                     
-                    # 1. ၃ မိနစ်စာ အပိုင်းကို ဖြတ်ယူခြင်း
                     chunk_vid = OUTPUT_DIR / f"chunk_{job_id}_part{i+1}.mp4"
                     subprocess.run(["ffmpeg", "-y", "-ss", str(start_t), "-t", str(current_chunk_dur), "-i", str(video_path), "-c", "copy", str(chunk_vid)], capture_output=True)
                     
-                    # 2. ဖြတ်ထားသော အပိုင်းကို AI သို့ပို့၍ Script တောင်းခြင်း
                     c_dur = float(media_engine.probe_video(chunk_vid).get("duration", current_chunk_dur))
                     chunk_script = media_engine.generate_script(api_key, chunk_vid, "video/mp4", settings.get("language", "Myanmar"), int(c_dur), settings.get("tone", "Cinematic"), recap_type, "Natural", None, settings.get("groq_api_key", ""))
                     
@@ -418,82 +415,89 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                         chunk_script = re.sub(r'^TITLE:.*$', '', chunk_script, flags=re.MULTILINE).strip()
                         chunk_script = re.sub(r'^COVER:.*$', '', chunk_script, flags=re.MULTILINE).strip()
                         
-                    # 3. အသံ (TTS) ဖန်တီးခြင်း
                     chunk_tts = media_engine.generate_microsoft_tts(chunk_script, voice_choice, speed_factor=float(settings.get("speed", 1.0)))
                     
-                    # 4. ဗီဒီယို အပြီးသတ် (Final Video) ပေါင်းစပ်ခြင်း
                     chunk_out = OUTPUT_DIR / f"final_{job_id}_part{i+1}.mp4"
                     temp_settings = settings.copy()
                     temp_settings["script"] = chunk_script
                     media_engine.render_final(chunk_vid, chunk_tts, temp_settings, chunk_out)
                     
+                    part_dur = 0
                     try: 
-                        final_dur += int(float(media_engine.probe_video(chunk_out).get("duration", 0)))
+                        part_dur = int(float(media_engine.probe_video(chunk_out).get("duration", 0)))
                     except: pass
                         
+                    part_dl_url = ""
                     if chunk_out.exists():
-                        all_download_urls.append(f"/api/download/{chunk_out.name}")
+                        part_dl_url = f"/api/download/{chunk_out.name}"
                         
-                    # ယာယီဖိုင်များဖျက်၍ Memory ရှင်းမည်
+                    # History တွင် ပေါ်စေရန် ထည့်သွင်းခြင်း (Supabase & Local)
+                    part_job_id = f"{job_id}_p{i+1}"
+                    part_filename = f"{v_title} (Part {i+1}/{total_chunks})"
+                    
+                    save_data("job", part_job_id, {
+                        "id": part_job_id, "status": "done", "progress": 100, 
+                        "message": f"အပိုင်း {i+1} အဆင်သင့်ပါပြီ", "download_url": part_dl_url, 
+                        "thumb_url": "", "user_email": user_email, "filename": part_filename,
+                        "duration": part_dur, "created_at": time.time(), "recap_type": recap_type
+                    })
+                    
+                    db._request("POST", "/rest/v1/jobs", headers=db._service_headers(), json={
+                        "job_id": part_job_id, "google_subject": member.get("google_subject", ""),
+                        "filename": part_filename, "status": "done", "progress": 100, 
+                        "message": f"အပိုင်း {i+1} အဆင်သင့်ပါပြီ", "duration": part_dur,
+                        "download_url": part_dl_url, "thumb_url": ""
+                    })
+
+                    # Telegram သို့ ချက်ချင်းပို့ခြင်း
+                    mins, secs = divmod(part_dur, 60)
+                    VOICE_NAMES_MM = {
+                        'Nilar': 'နီလာ (အမျိုးသမီး)', 'Thiha': 'သီဟ (အမျိုးသား)',
+                        'Ava': 'အေးမြတ်', 'Andrew': 'အောင်ဒင်', 'Emma': 'အိအိမွန်', 'Brian': 'ဘုန်းမြတ်',
+                        'Vivienne': 'ဝေဝေခိုင်', 'Remy': 'ရဲရင့်အောင်', 'Seraphina': 'စန္ဒီ', 'Florian': 'ဖြိုးမင်း',
+                        'Xiaoxiao': 'ဆုဆုလှိုင်', 'Giuseppe': 'ဂျော်နီ'
+                    }
+                    display_voice = VOICE_NAMES_MM.get(voice_choice, voice_choice)
+                    
+                    msg_body = (
+                        f"🎬 <b>Video Recap (အပိုင်း {i+1}/{total_chunks}) ပြီးစီးပါပြီ!</b>\n\n"
+                        f"👤 <b>အသုံးပြုသူ:</b> {user_name}\n"
+                        f"📁 <b>ဖိုင်အမည်:</b> {part_filename}\n"
+                        f"🎞 <b>အမျိုးအစား:</b> {recap_type}\n"
+                        f"⏱ <b>ကြာချိန်:</b> {mins} မိနစ် {secs} စက္ကန့်\n"
+                        f"⚡️ <b>Speed:</b> {settings.get('speed', 1.0)}x\n"
+                        f"🗣 <b>အသံ:</b> {display_voice}"
+                    )
+                    send_telegram_alert(msg_body)
+
+                    bind_info = load_data("tg_bind", user_email) or load_json_from_gcs(f"data/tg_bind_{user_email}.json")
+                    user_chat_id = bind_info.get("chat_id", "") if bind_info else ""
+                    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+                    base_url = os.getenv("BASE_URL", "https://oneteamrecap.site").strip()
+                    
+                    if user_chat_id and bot_token and part_dl_url:
+                        try:
+                            full_msg = f"{msg_body}\n\n📥 <b>ဒေါင်းလုဒ်လင့်ခ်:</b>\n{base_url}{part_dl_url}"
+                            buttons = [[{"text": f"📥 Download အပိုင်း ({i+1})", "url": f"{base_url}{part_dl_url}"}]]
+                            requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json={
+                                "chat_id": user_chat_id, "text": full_msg, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons}
+                            }, timeout=20)
+                        except Exception as tg_err:
+                            print(f"Telegram Bot Send Error: {tg_err}")
+
                     chunk_vid.unlink(missing_ok=True)
                     time.sleep(2)
 
-                update_progress(100, "အပိုင်းအားလုံး ဖန်တီးပြီးပါပြီ။")
+                update_progress(100, "အပိုင်းအားလုံး ဖန်တီးပြီးပါပြီ။ (History တွင် ကြည့်ပါ)")
                 db.record_success(member, entitlement, duration_seconds)
                 
-                main_download_url = all_download_urls[0] if all_download_urls else ""
-                thumb_download_url = ""
-                
-                update_job(job_id, {"status": "done", "progress": 100, "message": "အပိုင်းအားလုံး အဆင်သင့်ပါပြီ", "download_url": main_download_url, "thumb_url": thumb_download_url, "duration": final_dur})
+                update_job(job_id, {"status": "done", "progress": 100, "message": "အပိုင်းအားလုံး ဖန်တီးပြီးပါပြီ။ (History တွင် ကြည့်ပါ)"})
                 db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
-                    "status": "done", "progress": 100, "message": "အပိုင်းအားလုံး အဆင်သင့်ပါပြီ", 
-                    "download_url": main_download_url, "thumb_url": thumb_download_url, "duration": final_dur
+                    "status": "done", "progress": 100, "message": "အပိုင်းအားလုံး ဖန်တီးပြီးပါပြီ။ (History တွင် ကြည့်ပါ)"
                 })
 
-                user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
-                v_title = proj.get("filename", "video.mp4")
-                mins, secs = divmod(final_dur, 60)
-                
-                VOICE_NAMES_MM = {
-                    'Nilar': 'နီလာ (အမျိုးသမီး)', 'Thiha': 'သီဟ (အမျိုးသား)',
-                    'Ava': 'အေးမြတ်', 'Andrew': 'အောင်ဒင်', 'Emma': 'အိအိမွန်', 'Brian': 'ဘုန်းမြတ်',
-                    'Vivienne': 'ဝေဝေခိုင်', 'Remy': 'ရဲရင့်အောင်', 'Seraphina': 'စန္ဒီ', 'Florian': 'ဖြိုးမင်း',
-                    'Xiaoxiao': 'ဆုဆုလှိုင်', 'Giuseppe': 'ဂျော်နီ'
-                }
-                display_voice = VOICE_NAMES_MM.get(voice_choice, voice_choice)
-                
-                msg_body = (
-                    f"🎬 <b>Video Recap (အပိုင်းလိုက်) ပြီးစီးပါပြီ!</b>\n\n"
-                    f"👤 <b>အသုံးပြုသူ:</b> {user_name}\n"
-                    f"📁 <b>ဖိုင်အမည်:</b> {v_title}\n"
-                    f"🎞 <b>အမျိုးအစား:</b> {recap_type} (အပိုင်း {total_chunks} ပိုင်း)\n"
-                    f"⏱ <b>စုစုပေါင်းကြာချိန်:</b> {mins} မိနစ် {secs} စက္ကန့်\n"
-                    f"⚡️ <b>Speed:</b> {settings.get('speed', 1.0)}x\n"
-                    f"🗣 <b>အသံ:</b> {display_voice}"
-                )
-                send_telegram_alert(msg_body)
-
-                # Telegram Bot ထဲသို့ အပိုင်း (၁) (၂) (၃) ခလုတ်များ သီးသန့်စီ ပို့ပေးခြင်း
-                user_email = member.get("email", "").strip().lower()
-                bind_info = load_data("tg_bind", user_email) or load_json_from_gcs(f"data/tg_bind_{user_email}.json")
-                user_chat_id = bind_info.get("chat_id", "") if bind_info else ""
-                bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-                base_url = os.getenv("BASE_URL", "https://oneteamrecap.site").strip()
-                
-                if user_chat_id and bot_token:
-                    try:
-                        links_text = "\n".join([f"အပိုင်း {idx+1}: {base_url}{url}" for idx, url in enumerate(all_download_urls)])
-                        full_msg = f"{msg_body}\n\n📥 <b>ဒေါင်းလုဒ်လင့်ခ်များ (ခွဲထုတ်ထားသည်):</b>\n{links_text}"
-                        
-                        buttons = [[{"text": f"📥 Download အပိုင်း ({idx+1})", "url": f"{base_url}{url}"}] for idx, url in enumerate(all_download_urls)]
-                        requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json={
-                            "chat_id": user_chat_id, "text": full_msg, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons}
-                        }, timeout=20)
-                    except Exception as tg_err:
-                        print(f"Telegram Bot Send Error: {tg_err}")
-
             # =================================================================================
-            # ၄ မိနစ်အောက် ဗီဒီယိုများ (သို့) အခြား Recap စနစ်များအတွက် ပုံမှန်အတိုင်း လုပ်ဆောင်မည်
+            # ၅ မိနစ်အောက် ဗီဒီယိုများ (သို့) အခြားစနစ်များအတွက် ပုံမှန်အတိုင်း လုပ်ဆောင်မည်
             # =================================================================================
             else:
                 script = media_engine.generate_script(api_key, video_path, "video/mp4", settings.get("language", "Myanmar"), int(duration_seconds), settings.get("tone", "Cinematic"), recap_type, "Natural", update_progress, settings.get("groq_api_key", ""))
@@ -509,37 +513,22 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                 update_progress(80, "Final Video ပေါင်းစပ်နေပါသည်")
                 out_file = OUTPUT_DIR / f"final_{job_id}.mp4"
                 media_engine.render_final(video_path, tts_wav, settings, out_file)
-                gcs_url = upload_to_gcs(out_file, f"outputs/{out_file.name}", content_type="video/mp4")
-
+                
                 thumb_file = OUTPUT_DIR / f"thumb_{job_id}.jpg"
                 thumb_res = media_engine.generate_thumbnail(video_path, script, thumb_file)
-                if thumb_res:
-                    thumb_gcs = upload_to_gcs(thumb_file, f"outputs/{thumb_file.name}", content_type="image/jpeg")
-                    thumb_download_url = f"/api/download/{thumb_file.name}"
-                else:
-                    thumb_download_url = ""
+                thumb_download_url = f"/api/download/{thumb_file.name}" if thumb_res else ""
 
-                user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
-                v_title = proj.get("filename", "video.mp4")
-                
-                out_size_mb = round(out_file.stat().st_size / (1024 * 1024), 2) if out_file.exists() else 0.0
                 speed_val = settings.get("speed", 1.0)
-                recap_type_val = settings.get("recapType", settings.get("recap_type", "Movie Recap"))
-                
                 try: final_dur = int(float(media_engine.probe_video(out_file).get("duration", 0)))
                 except: final_dur = int(duration_seconds / float(speed_val)) if float(speed_val) > 0 else int(duration_seconds)
 
                 db.record_success(member, entitlement, duration_seconds)
-                
-                update_job(job_id, {"status": "done", "progress": 100, "message": "Final MP4 အဆင်သင့်ပါပြီ", "download_url": f"/api/download/{out_file.name}", "thumb_url": thumb_download_url, "gcs_url": gcs_url, "duration": final_dur})
-                
+                update_job(job_id, {"status": "done", "progress": 100, "message": "Final MP4 အဆင်သင့်ပါပြီ", "download_url": f"/api/download/{out_file.name}", "thumb_url": thumb_download_url, "duration": final_dur})
                 db._request("PATCH", f"/rest/v1/jobs?job_id=eq.{job_id}", headers=db._service_headers(), json={
-                    "status": "done", "progress": 100, "message": "Final MP4 အဆင်သင့်ပါပြီ", 
-                    "download_url": f"/api/download/{out_file.name}", "thumb_url": thumb_download_url, "duration": final_dur
+                    "status": "done", "progress": 100, "message": "Final MP4 အဆင်သင့်ပါပြီ", "download_url": f"/api/download/{out_file.name}", "thumb_url": thumb_download_url, "duration": final_dur
                 })
 
                 mins, secs = divmod(final_dur, 60)
-                
                 VOICE_NAMES_MM = {
                     'Nilar': 'နီလာ (အမျိုးသမီး)', 'Thiha': 'သီဟ (အမျိုးသား)',
                     'Ava': 'အေးမြတ်', 'Andrew': 'အောင်ဒင်', 'Emma': 'အိအိမွန်', 'Brian': 'ဘုန်းမြတ်',
@@ -552,16 +541,13 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     f"🎬 <b>Video Recap ပြီးစီးပါပြီ!</b>\n\n"
                     f"👤 <b>အသုံးပြုသူ:</b> {user_name}\n"
                     f"📁 <b>ဖိုင်အမည်:</b> {v_title}\n"
-                    f"🎞 <b>အမျိုးအစား:</b> {recap_type_val}\n"
+                    f"🎞 <b>အမျိုးအစား:</b> {recap_type}\n"
                     f"⏱ <b>ကြာချိန်:</b> {mins} မိနစ် {secs} စက္ကန့်\n"
                     f"⚡️ <b>Speed:</b> {speed_val}x\n"
-                    f"🗣 <b>အသံ:</b> {display_voice}\n"
-                    f"💾 <b>ဖိုင်အရွယ်အစား:</b> {out_size_mb} MB"
+                    f"🗣 <b>အသံ:</b> {display_voice}"
                 )
-                
                 send_telegram_alert(msg_body)
 
-                user_email = member.get("email", "").strip().lower()
                 bind_info = load_data("tg_bind", user_email) or load_json_from_gcs(f"data/tg_bind_{user_email}.json")
                 user_chat_id = bind_info.get("chat_id", "") if bind_info else ""
                 bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -571,11 +557,9 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
                     try:
                         direct_dl_url = f"{base_url}/api/download/{out_file.name}"
                         full_msg = f"{msg_body}\n\n📥 <b>ဒေါင်းလုဒ်လင့်ခ်များ:</b>\n{direct_dl_url}"
-                        
                         buttons = [[{"text": "📥 Download Video (100% Quality)", "url": direct_dl_url}]]
                         if thumb_download_url:
                             buttons.append([{"text": "🖼 ကာဘာပုံ (Thumbnail) ဒေါင်းရန်", "url": f"{base_url}{thumb_download_url}"}])
-                            
                         requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json={
                             "chat_id": user_chat_id, "text": full_msg, "parse_mode": "HTML", "reply_markup": {"inline_keyboard": buttons}
                         }, timeout=20)
@@ -590,11 +574,8 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             })
         
             user_name = member.get("user_metadata", {}).get("full_name") or member.get("email", "").split("@")[0]
-            
-            # Admin Group သို့ Error ပို့ရန်
             send_telegram_alert(f"⚠️ <b>Video Recap ထုတ်လုပ်မှု မအောင်မြင်ပါ!</b>\n\n👤 <b>အသုံးပြုသူ:</b> {user_name}\n📁 <b>ဖိုင်အမည်:</b> {proj.get('filename', 'video.mp4')}\n❌ <b>Error:</b> <code>{str(exc)[-250:]}</code>")
 
-            # User Chat ဆီသို့ Error တိုက်ရိုက်ပို့ရန်
             user_email = member.get("email", "").strip().lower()
             bind_info = load_data("tg_bind", user_email) or load_json_from_gcs(f"data/tg_bind_{user_email}.json")
             user_chat_id = bind_info.get("chat_id", "") if bind_info else ""
@@ -602,13 +583,9 @@ async def create_job(payload: JobSettings, authorization: Optional[str] = Header
             
             if user_chat_id and bot_token:
                 try:
-                    # User နားလည်လွယ်မည့် စာသားဖြင့် ပြင်ဆင်ပို့ပေးခြင်း
                     user_error_msg = f"⚠️ <b>လူကြီးမင်း၏ Video Recap ထုတ်လုပ်မှု မအောင်မြင်ပါ။</b>\n\n📁 <b>ဖိုင်အမည်:</b> {proj.get('filename', 'video.mp4')}\n❌ <b>အကြောင်းရင်း:</b> {str(exc)}\n\n<i>ခေတ္တစောင့်ဆိုင်းပြီးနောက် ထပ်မံကြိုးစားကြည့်ပါခင်ဗျာ။</i>"
-                    
                     requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json={
-                        "chat_id": user_chat_id,
-                        "text": user_error_msg,
-                        "parse_mode": "HTML"
+                        "chat_id": user_chat_id, "text": user_error_msg, "parse_mode": "HTML"
                     }, timeout=20)
                 except Exception as tg_err:
                     print(f"Telegram Bot Send Error to User: {tg_err}")
