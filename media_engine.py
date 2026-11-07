@@ -398,55 +398,11 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
             )
 
 
-        # =====================================================================
-        # 📌 ၄ မိနစ်ထက်ကျော်သော ဗီဒီယိုများကို ၃ မိနစ်စာ အပိုင်းလေးများ Auto ခွဲပို့မည် (Raw to Recap သီးသန့်)
-        # =====================================================================
-        if duration_seconds > 240 and recap_type in ["Raw to Recap", "Raw to reacp"]:
-            if progress: progress(55, "📝 AI မှ ဇာတ်ညွှန်းကို အပိုင်းလိုက် ရေးသားနေပါသည် (ခေတ္တစောင့်ပါ)...")
-            
-            chunk_duration = 180 # ၃ မိနစ်စာ (180 စက္ကန့်) စီ ပိုင်းမည်
-            total_chunks = math.ceil(duration_seconds / chunk_duration)
-            full_script = ""
-            
-            for i in range(total_chunks):
-                start_time = i * chunk_duration
-                end_time = min((i + 1) * chunk_duration, duration_seconds)
-                
-                # အပိုင်း (ဥပမာ 00:00 မှ 03:00) ကိုသာ အာရုံစိုက်ရန် AI ကို တင်းကျပ်စွာ ခိုင်းစေခြင်း
-                chunk_instruction = instruction + f"\n\n**CRITICAL: You are only narrating the segment from {int(start_time)//60:02d}:{int(start_time)%60:02d} to {int(end_time)//60:02d}:{int(end_time)%60:02d}. Do NOT narrate anything outside this time frame.**"
-                
-                if progress: progress(55 + int((i / total_chunks) * 20), f"📝 AI မှ ဇာတ်ညွှန်း ရေးသားနေပါသည် (အပိုင်း {i+1}/{total_chunks})...")
-                
-                chunk_parts = [{"fileData": {"fileUri": gemini_file["fileUri"], "mimeType": gemini_file["mimeType"]}}]
-                chunk_parts.append({"text": chunk_instruction})
-                
-                try:
-                    import time
-                    res = _generate_content(api_key, chunk_parts, config={"temperature": 0.3}, timeout=180)
-                    chunk_text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
-                    
-                    if chunk_text:
-                        if i > 0: # ဒုတိယပိုင်းမှစ၍ TITLE နှင့် COVER များကို ဖျက်မည်
-                            import re
-                            chunk_text = re.sub(r'^TITLE:.*$', '', chunk_text, flags=re.MULTILINE).strip()
-                            chunk_text = re.sub(r'^COVER:.*$', '', chunk_text, flags=re.MULTILINE).strip()
-                        
-                        full_script += chunk_text + "\n\n"
-                        time.sleep(2) # API Limit မဖြစ်အောင် ခဏစောင့်မည်
-                except Exception as e:
-                    print(f"Chunk {i+1} Generation Error: {e}")
-                    pass
-            
-            if not full_script.strip(): raise RuntimeError("Script မပြန်လာပါ။")
-            return full_script.strip()
-            
-        else:
-            # ၄ မိနစ်အောက် ဗီဒီယိုများအတွက် သာမန်အတိုင်း တစ်ခါတည်းပို့မည်
-            parts.append({"text": instruction})
-            res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=180)
-            text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
-            if not text: raise RuntimeError("Script မပြန်လာပါ။")
-            return text.strip()
+        parts.append({"text": instruction})
+        res = _generate_content(api_key, parts, config={"temperature": 0.3}, timeout=180)
+        text = "\n".join(str(p.get("text") or "") for c in res.get("candidates", []) for p in c.get("content", {}).get("parts", [])).strip()
+        if not text: raise RuntimeError("Script မပြန်လာပါ။")
+        return text.strip()
 
     finally:
         if gemini_file and gemini_file.get("name"):
@@ -1494,8 +1450,9 @@ def render_final(video_path: Path, tts_wav: bytes, settings: dict[str, Any], out
     elif v_filter == "Glow":
         video_filters.append("eq=brightness=0.06:saturation=1.2:contrast=1.05")
     video_filters.append("unsharp=5:5:0.8:3:3:0.4")
-    if settings.get("video_bg_blur"):
-        video_filters.append(f"split=2[bg][fg];[bg]crop=iw/2:ih/2,scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:2[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
+    bg_blur_enabled = settings.get("video_bg_blur", False) or settings.get("videoBgBlur", False)
+    if bg_blur_enabled:
+        video_filters.append(f"split=2[bg][fg];[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h},boxblur=20:10[bg_blurred];[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos[fg_scaled];[bg_blurred][fg_scaled]overlay=(W-w)/2:(H-h)/2")
     else:
         video_filters.extend([f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:flags=lanczos", f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"])
     
