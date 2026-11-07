@@ -389,7 +389,7 @@ def generate_script(api_key: str, video_path: Path, mime_type: str, language: st
                 f"You are an Expert Movie Narrator. Watch the visual frames and listen to the audio very carefully.\n"
                 f"Provide a 100% COMPLETE, highly detailed movie recap in HIGHLY NATURAL, EVERYDAY SPOKEN {language} ({tone} tone).\n"
                 "CRITICAL RULES:\n"
-                "1. NO TIMESTAMPS: Absolutely DO NOT write any timestamps (e.g., [00:00]). Just tell the story continuously as a single flowing narrative.\n"
+                "1. NO TIMESTAMPS & WRITE A LOT: Absolutely DO NOT write any timestamps. You MUST write a very long, highly detailed script (at least 600 to 800 Myanmar words). Do NOT write a short summary.\n"
                 "2. 100% COVERAGE (အခန်းမလွတ်စေရန်): Do NOT skip any scenes, no matter how small. Cover the entire video from the very first second to the last.\n"
                 "3. ACTIONS & EXPRESSIONS (အမူအရာ): Describe the characters' actions, facial expressions, and body language in rich detail so the listener can picture the scene perfectly.\n"
                 "4. FULL DIALOGUES (စကားပြော): You MUST weave EVERY SINGLE spoken dialogue into your narration. Do not just summarize what they talked about; translate and narrate exactly what they said.\n"
